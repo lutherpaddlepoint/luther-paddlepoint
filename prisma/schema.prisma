@@ -1,0 +1,326 @@
+// Luther PaddlePoint & Pool — database schema
+// Money is stored as integer centavos (₱200.00 = 20000) to avoid rounding errors.
+// Timestamps are stored in UTC (timestamptz) and displayed in Asia/Manila.
+// Times of day (rate rules, pool sessions) are stored as minutes after midnight, Manila time
+// (e.g. 6:00 AM = 360, 5:00 PM = 1020, 10:00 PM = 1320).
+//
+// Rules Prisma cannot express (exclusion constraint against double booking, CHECK constraints,
+// hold-expiry function) live in prisma/sql/constraints.sql and are appended to the init migration.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  OWNER
+  STAFF
+
+  @@map("role")
+}
+
+enum AmenityType {
+  COURT
+  POOL
+
+  @@map("amenity_type")
+}
+
+enum RateUnit {
+  PER_HOUR
+  PER_PERSON
+
+  @@map("rate_unit")
+}
+
+enum GuestType {
+  ADULT
+  KID
+
+  @@map("guest_type")
+}
+
+enum BookingKind {
+  BOOKING
+  BLOCK // maintenance, events, tournaments
+
+  @@map("booking_kind")
+}
+
+enum BookingStatus {
+  HOLD                 // slot reserved while customer pays; auto-expires
+  PENDING_VERIFICATION // manual GCash proof uploaded, waiting for staff
+  CONFIRMED
+  CHECKED_IN
+  COMPLETED
+  NO_SHOW
+  CANCELLED
+  EXPIRED
+  REJECTED             // staff rejected the GCash proof
+
+  @@map("booking_status")
+}
+
+enum BookingSource {
+  ONLINE
+  WALK_IN
+
+  @@map("booking_source")
+}
+
+enum PaymentType {
+  RESERVATION_FEE
+  BALANCE
+
+  @@map("payment_type")
+}
+
+enum PaymentMethod {
+  GCASH_MANUAL
+  GCASH_PAYMONGO
+  CASH
+
+  @@map("payment_method")
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  REJECTED
+
+  @@map("payment_status")
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  name         String
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  role         Role
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  bookingsCreated  Booking[]  @relation("BookingCreatedBy")
+  paymentsVerified Payment[]  @relation("PaymentVerifiedBy")
+  auditLogs        AuditLog[]
+
+  @@map("users")
+}
+
+model Amenity {
+  id       String      @id @default(uuid()) @db.Uuid
+  type     AmenityType
+  name     String
+  capacity Int?        // pool: max guests per session (30). null for court.
+  isActive Boolean     @default(true) @map("is_active")
+
+  rateRules    RateRule[]
+  poolSessions PoolSession[]
+  bookings     Booking[]
+
+  @@map("amenities")
+}
+
+model RateRule {
+  id          String     @id @default(uuid()) @db.Uuid
+  amenityId   String     @map("amenity_id") @db.Uuid
+  label       String     // e.g. "Day rate", "Night rate", "Adult entrance"
+  startMinute Int        @map("start_minute") // inclusive, minutes after midnight (Manila)
+  endMinute   Int        @map("end_minute")   // exclusive
+  priceCentavos Int      @map("price_centavos")
+  unit        RateUnit
+  guestType   GuestType? @map("guest_type") // only for PER_PERSON pool rules
+  daysOfWeek  Int[]      @default([0, 1, 2, 3, 4, 5, 6]) @map("days_of_week") // 0 = Sunday
+  isActive    Boolean    @default(true) @map("is_active")
+
+  amenity Amenity @relation(fields: [amenityId], references: [id])
+
+  @@index([amenityId, isActive])
+  @@map("rate_rules")
+}
+
+model PoolSession {
+  id          String  @id @default(uuid()) @db.Uuid
+  amenityId   String  @map("amenity_id") @db.Uuid
+  name        String  // "Day session", "Night session"
+  startMinute Int     @map("start_minute")
+  endMinute   Int     @map("end_minute")
+  isActive    Boolean @default(true) @map("is_active")
+
+  amenity   Amenity                @relation(fields: [amenityId], references: [id])
+  inventory PoolSessionInventory[]
+
+  @@map("pool_sessions")
+}
+
+// One row per pool session per date. "reserved" is updated atomically so the pool can never
+// exceed capacity, even when online and walk-in bookings happen at the same moment.
+model PoolSessionInventory {
+  id            String   @id @default(uuid()) @db.Uuid
+  poolSessionId String   @map("pool_session_id") @db.Uuid
+  date          DateTime @db.Date // Manila calendar date
+  capacity      Int
+  reserved      Int      @default(0)
+  isClosed      Boolean  @default(false) @map("is_closed") // pool closed for maintenance/event
+  closedReason  String?  @map("closed_reason")
+
+  poolSession PoolSession @relation(fields: [poolSessionId], references: [id])
+  bookings    Booking[]
+
+  @@unique([poolSessionId, date])
+  @@map("pool_session_inventory")
+}
+
+model Booking {
+  id              String        @id @default(uuid()) @db.Uuid
+  referenceCode   String        @unique @map("reference_code") // e.g. LPP-7K3QX, shown to customer and staff
+  accessToken     String        @unique @map("access_token")   // secret part of the customer's private booking link
+  amenityId       String        @map("amenity_id") @db.Uuid
+  kind            BookingKind   @default(BOOKING)
+  // true = no other active booking may overlap (court bookings, court blocks).
+  // false = shared capacity (regular pool bookings, limited by pool_session_inventory).
+  exclusive       Boolean
+  poolInventoryId String?       @map("pool_inventory_id") @db.Uuid
+
+  customerName    String?       @map("customer_name")
+  mobile          String?
+  email           String?
+  startAt         DateTime      @map("start_at") @db.Timestamptz(6)
+  endAt           DateTime      @map("end_at") @db.Timestamptz(6)
+  adults          Int           @default(0)
+  kids            Int           @default(0) // 10 years old and below
+
+  totalCentavos          Int    @default(0) @map("total_centavos")
+  reservationFeeCentavos Int    @default(0) @map("reservation_fee_centavos") // 50% of total, non-refundable
+  balanceCentavos        Int    @default(0) @map("balance_centavos")         // paid on-site
+
+  status          BookingStatus
+  source          BookingSource @default(ONLINE)
+  holdExpiresAt   DateTime?     @map("hold_expires_at") @db.Timestamptz(6)
+  agreedToPolicyAt DateTime?    @map("agreed_to_policy_at") @db.Timestamptz(6) // non-refundable checkbox
+  rescheduleCount Int           @default(0) @map("reschedule_count")
+  rescheduledFromId String?     @map("rescheduled_from_id") @db.Uuid
+  checkedInAt     DateTime?     @map("checked_in_at") @db.Timestamptz(6)
+  notes           String?       // block reason, staff notes
+  attentionReason String?       @map("attention_reason") // set when staff must follow up (e.g. paid after slot was taken)
+  createdById     String?       @map("created_by") @db.Uuid
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  amenity         Amenity               @relation(fields: [amenityId], references: [id])
+  poolInventory   PoolSessionInventory? @relation(fields: [poolInventoryId], references: [id])
+  createdBy       User?                 @relation("BookingCreatedBy", fields: [createdById], references: [id])
+  rescheduledFrom Booking?              @relation("Reschedule", fields: [rescheduledFromId], references: [id])
+  rescheduledTo   Booking[]             @relation("Reschedule")
+  lineItems       BookingLineItem[]
+  payments        Payment[]
+  notifications   Notification[]
+
+  @@index([amenityId, startAt])
+  @@index([status, holdExpiresAt])
+  @@index([mobile])
+  @@map("bookings")
+}
+
+model BookingLineItem {
+  id                String @id @default(uuid()) @db.Uuid
+  bookingId         String @map("booking_id") @db.Uuid
+  description       String // "4:00–5:00 PM day rate", "Adult entrance"
+  quantity          Int
+  unitPriceCentavos Int    @map("unit_price_centavos")
+  amountCentavos    Int    @map("amount_centavos")
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@map("booking_line_items")
+}
+
+model Payment {
+  id                String        @id @default(uuid()) @db.Uuid
+  bookingId         String        @map("booking_id") @db.Uuid
+  type              PaymentType
+  method            PaymentMethod
+  amountCentavos    Int           @map("amount_centavos")
+  gcashReference    String?       @map("gcash_reference")
+  proofImagePath    String?       @map("proof_image_path") // private storage path, served via signed URL
+  providerPaymentId String?       @unique @map("provider_payment_id") // PayMongo checkout session id (cs_...)
+  status            PaymentStatus @default(PENDING)
+  verifiedById      String?       @map("verified_by") @db.Uuid
+  rejectionReason   String?       @map("rejection_reason")
+  paidAt            DateTime?     @map("paid_at") @db.Timestamptz(6)
+  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  booking    Booking @relation(fields: [bookingId], references: [id])
+  verifiedBy User?   @relation("PaymentVerifiedBy", fields: [verifiedById], references: [id])
+
+  @@index([bookingId])
+  @@index([gcashReference])
+  @@map("payments")
+}
+
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("settings")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String?  @map("user_id") @db.Uuid
+  action    String   // "RATE_UPDATED", "PAYMENT_VERIFIED", "BOOKING_RESCHEDULED", ...
+  entity    String
+  entityId  String?  @map("entity_id")
+  details   Json?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([entity, entityId])
+  @@map("audit_logs")
+}
+
+enum NotificationChannel {
+  EMAIL
+  SMS
+
+  @@map("notification_channel")
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED  // will be retried by the scheduled job (up to 5 tries)
+  SKIPPED // no longer relevant, or sending not configured
+
+  @@map("notification_status")
+}
+
+// Every email/SMS is recorded here first, then sent. The unique dedupe key means the same
+// message is never sent twice, even if a payment is confirmed twice or the job runs twice.
+model Notification {
+  id         String              @id @default(uuid()) @db.Uuid
+  bookingId  String?             @map("booking_id") @db.Uuid
+  event      String
+  channel    NotificationChannel
+  recipient  String
+  dedupeKey  String              @unique @map("dedupe_key")
+  payload    Json?
+  status     NotificationStatus  @default(PENDING)
+  attempts   Int                 @default(0)
+  lastError  String?             @map("last_error")
+  sentAt     DateTime?           @map("sent_at") @db.Timestamptz(6)
+  createdAt  DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  booking Booking? @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([bookingId])
+  @@map("notifications")
+}

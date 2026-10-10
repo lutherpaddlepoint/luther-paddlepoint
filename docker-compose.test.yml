@@ -1,0 +1,13 @@
+# A throwaway database for the automated tests. Never point the tests at your real database.
+#   npm run test:db:start     (needs Docker Desktop)
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: test
+      POSTGRES_DB: lpp_test
+    ports:
+      - "54329:5432"
+    tmpfs:
+      - /var/lib/postgresql/data

@@ -1,0 +1,63 @@
+{
+  "name": "luther-paddlepoint-pool",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "prisma generate && next build",
+    "start": "next start",
+    "postinstall": "prisma generate",
+    "db:create-init": "prisma migrate dev --name init --create-only",
+    "db:append-constraints": "node scripts/append-constraints.mjs",
+    "db:migrate": "prisma migrate dev",
+    "db:seed": "prisma db seed",
+    "db:reset": "prisma migrate reset",
+    "test": "tsx --test tests/*.test.ts",
+    "payments": "tsx --env-file=.env scripts/payments.ts",
+    "storage:setup": "tsx --env-file=.env scripts/storage-setup.ts",
+    "paymongo:webhook": "tsx --env-file=.env scripts/paymongo-webhook.ts",
+    "test:db": "dotenv -e .env.test -- prisma migrate reset --force --skip-seed && tsx --env-file=.env.test --test --test-concurrency=1 tests/db/*.test.ts",
+    "test:db:start": "docker compose -f docker-compose.test.yml up -d",
+    "test:all": "npm test && npm run test:db",
+    "setup:production": "tsx --env-file=.env scripts/setup-production.ts",
+    "db:lockdown": "tsx --env-file=.env scripts/supabase-lockdown.ts",
+    "db:deploy": "prisma migrate deploy",
+    "check:env": "tsx --env-file=.env scripts/check-env.ts"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "5.22.0",
+    "bcryptjs": "2.4.3",
+    "next": "14.2.15",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "zod": "3.23.8",
+    "jsqr": "1.4.0",
+    "nodemailer": "6.9.16",
+    "qrcode": "1.5.4"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "2.4.6",
+    "@types/node": "20.17.6",
+    "prisma": "5.22.0",
+    "tsx": "4.19.2",
+    "typescript": "5.6.3",
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1",
+    "tailwindcss": "3.4.14",
+    "postcss": "8.4.47",
+    "autoprefixer": "10.4.20",
+    "@types/nodemailer": "6.4.17",
+    "@types/qrcode": "1.5.5",
+    "dotenv-cli": "7.4.2"
+  },
+  "allowScripts": {
+    "@prisma/client@5.22.0": true,
+    "@prisma/engines@5.22.0": true,
+    "esbuild@0.23.1": true,
+    "prisma@5.22.0": true
+  }
+}

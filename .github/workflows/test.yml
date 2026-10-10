@@ -1,0 +1,41 @@
+# Runs every test automatically each time code is pushed to GitHub.
+name: Tests
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: lpp_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:test@localhost:5432/lpp_test
+      DIRECT_URL: postgresql://postgres:test@localhost:5432/lpp_test
+      APP_URL: http://localhost:3000
+      SESSION_SECRET: ci-session-secret-at-least-32-characters-long
+      CRON_SECRET: ci-cron-secret
+      PAYMONGO_WEBHOOK_SECRET: whsk_test_secret
+      SUPABASE_URL: http://storage.test
+      SUPABASE_SERVICE_ROLE_KEY: test
+      SEMAPHORE_API_KEY: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Create database (uses the committed migrations, including the safety constraints)
+        run: npx prisma migrate deploy
+      - name: Unit tests
+        run: npm test
+      - name: Database tests
+        run: npx tsx --test --test-concurrency=1 tests/db/*.test.ts
+      - name: Type check and production build
+        run: npx tsc --noEmit && npm run build
