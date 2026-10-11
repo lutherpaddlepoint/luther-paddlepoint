@@ -9,7 +9,7 @@ const env = () => {
   return { url: url.replace(/\/$/, ""), key, bucket };
 };
 
-const headers = (key: string) => ({ Authorization: `Bearer ${key}`, apikey: key });
+      const headers = (key: string): Record<string, string> => (key.startsWith("sb_") ? { apikey: key } : { Authorization: `Bearer ${key}`, apikey: key });
 
 export async function uploadProof(path: string, bytes: Uint8Array, contentType: string) {
   const { url, key, bucket } = env();
