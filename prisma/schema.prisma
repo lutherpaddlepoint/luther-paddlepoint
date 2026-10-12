@@ -286,6 +286,70 @@ model AuditLog {
   @@map("audit_logs")
 }
 
+// ---------------------------------------------------------------- Open play (paddle stacking)
+// Staff schedule an open play session on the court. The court is blocked for those hours
+// (a BLOCK booking), so no one can book it. Players are added to a paddle stack as they arrive:
+// the first 4 in line go on court; after each game all 4 go to the back of the line.
+// Each player pays per hour, counted from check-in to check-out.
+
+enum OpenPlayStatus {
+  SCHEDULED
+  CLOSED    // session over, everyone checked out
+  CANCELLED
+
+  @@map("open_play_status")
+}
+
+enum OpenPlayPlayerState {
+  QUEUED  // waiting in the paddle stack
+  PLAYING // on court now
+  RESTING // checked in but sitting out (not in line)
+  OUT     // checked out
+
+  @@map("open_play_player_state")
+}
+
+model OpenPlaySession {
+  id                 String         @id @default(uuid()) @db.Uuid
+  date               DateTime       @db.Date // Manila calendar date
+  startMinute        Int            @map("start_minute")
+  endMinute          Int            @map("end_minute")
+  rateCentavosPerHour Int           @map("rate_centavos_per_hour")
+  maxPlayers         Int            @map("max_players")
+  notes              String?
+  status             OpenPlayStatus @default(SCHEDULED)
+  blockBookingId     String?        @unique @map("block_booking_id") @db.Uuid
+  gamesPlayed        Int            @default(0) @map("games_played")
+  createdById        String?        @map("created_by") @db.Uuid
+  createdAt          DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  players OpenPlayPlayer[]
+
+  @@index([date])
+  @@map("open_play_sessions")
+}
+
+model OpenPlayPlayer {
+  id            String              @id @default(uuid()) @db.Uuid
+  sessionId     String              @map("session_id") @db.Uuid
+  name          String              // nickname shown on the public screen
+  mobile        String?
+  state         OpenPlayPlayerState @default(QUEUED)
+  queuePos      Int                 @map("queue_pos") // lower = earlier in line
+  gamesPlayed   Int                 @default(0) @map("games_played")
+  checkedInAt   DateTime            @default(now()) @map("checked_in_at") @db.Timestamptz(6)
+  checkedOutAt  DateTime?           @map("checked_out_at") @db.Timestamptz(6)
+  hoursCharged  Int?                @map("hours_charged")
+  amountCentavos Int?               @map("amount_centavos")
+  paymentMethod PaymentMethod?      @map("payment_method")
+  gcashReference String?            @map("gcash_reference")
+
+  session OpenPlaySession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, state, queuePos])
+  @@map("open_play_players")
+}
+
 enum NotificationChannel {
   EMAIL
   SMS

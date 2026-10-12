@@ -13,6 +13,7 @@ export default function AdminNav({ isOwner, pending, attention }: { isOwner: boo
     { href: "/admin/calendar", label: "Calendar" },
     { href: "/admin/check-in", label: "Check-in" },
     { href: "/admin/walk-in", label: "Walk-in" },
+    { href: "/admin/open-play", label: "Open play" },
     { href: "/admin/blocks", label: "Blocks", ownerOnly: true },
     { href: "/admin/reports", label: "Reports", ownerOnly: true },
     { href: "/admin/settings", label: "Settings", ownerOnly: true },

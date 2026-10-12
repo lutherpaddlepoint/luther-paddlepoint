@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { reportData } from "@/lib/admin-data";
+import { openPlayTotals } from "@/lib/open-play";
 import { formatPeso } from "@/lib/pricing";
 import { addDays, dayOfWeek, formatMinute, manilaToUtc, todayInManila } from "@/lib/time";
 
@@ -27,7 +28,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: { ra
   let [from, to] = rangeFor(key, today);
   if (key === "custom" && valid(searchParams.from) && valid(searchParams.to)) [from, to] = [searchParams.from!, searchParams.to!];
   if (from > to) [from, to] = [to, from];
-  const r = await reportData(from, to);
+  const [r, op] = await Promise.all([reportData(from, to), openPlayTotals(from, to)]);
   const maxDay = Math.max(1, ...r.byDay.map((d) => d.value));
   const maxPeak = Math.max(1, ...r.peakHours.map((p) => p.count));
   const maxWd = Math.max(1, ...r.byWeekday);
@@ -61,6 +62,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: { ra
         <Stat label="Value of bookings" value={peso(r.value.total)} sub={`${r.bookingsCount} bookings, ${r.walkIns} walk-in`} />
         <Stat label="Court booked" value={`${Math.round(r.court.occupancy * 100)}%`} sub={`${r.court.hoursBooked} of ${r.court.hoursAvailable} open hours`} />
         <Stat label="Pool guests" value={String(r.pool.adults + r.pool.kids)} sub={`${r.pool.adults} adults, ${r.pool.kids} kids`} />
+        <Stat label="Open play collected" value={peso(op.total)} sub={`${op.players} players · GCash ${peso(op.gcash)}, cash ${peso(op.cash)}`} />
       </dl>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-2">

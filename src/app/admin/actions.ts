@@ -14,6 +14,9 @@ import {
 } from "@/lib/admin-ops";
 import { addStaff, changeOwnPassword, resetPassword, saveGeneral, saveRates, setActive } from "@/lib/settings-admin";
 import { prisma } from "@/lib/db";
+import {
+  addPlayer, cancelOpenPlay, checkOutPlayer, closeOpenPlay, createOpenPlay, finishGame, moveToBack, setResting, startNextGame,
+} from "@/lib/open-play";
 import { sendEmail, NotConfigured } from "@/lib/senders";
 import { toMinute } from "@/lib/time";
 import type { ActionResult } from "@/lib/action-result";
@@ -312,5 +315,89 @@ export async function sendTestEmailAction(fd: FormData) {
       return { ok: false, error: `Sending failed: ${(e as Error).message}` };
     }
     return { ok: true, message: `Sent to ${to}. Check the inbox (and spam folder).` };
+  });
+}
+
+// ---------------------------------------------------------------- open play (paddle stacking)
+export async function createOpenPlayAction(fd: FormData) {
+  return run(async () => {
+    const user = await requireUser();
+    const s = await createOpenPlay({
+      date: str(fd, "date"), startMinute: minute(fd, "start"), endMinute: minute(fd, "end"),
+      rateCentavosPerHour: centavos(fd, "rate"), maxPlayers: int(fd, "maxPlayers"), notes: str(fd, "notes"),
+    }, user);
+    return { ok: true, message: "Open play scheduled. The court is blocked for those hours.", redirect: `/admin/open-play/${s.id}` };
+  });
+}
+
+export async function cancelOpenPlayAction(fd: FormData) {
+  return run(async () => {
+    const user = await requireUser();
+    await cancelOpenPlay(str(fd, "sessionId"), user);
+    return { ok: true, message: "Cancelled. The court is open for bookings again.", redirect: "/admin/open-play" };
+  });
+}
+
+export async function closeOpenPlayAction(fd: FormData) {
+  return run(async () => {
+    const user = await requireUser();
+    await closeOpenPlay(str(fd, "sessionId"), user);
+    return { ok: true, message: "Session closed." };
+  });
+}
+
+export async function addOpenPlayPlayerAction(fd: FormData) {
+  return run(async () => {
+    const user = await requireUser();
+    const p = await addPlayer(str(fd, "sessionId"), str(fd, "name"), str(fd, "mobile"), user);
+    return { ok: true, message: `${p.name} added to the line.` };
+  });
+}
+
+export async function startOpenPlayGameAction(fd: FormData) {
+  return run(async () => {
+    const user = await requireUser();
+    const next = await startNextGame(str(fd, "sessionId"), user);
+    return { ok: true, message: `On court: ${next.map((p) => p.name).join(", ")}` };
+  });
+}
+
+export async function finishOpenPlayGameAction(fd: FormData) {
+  return run(async () => {
+    const user = await requireUser();
+    const { next } = await finishGame(str(fd, "sessionId"), str(fd, "startNext") === "1", user);
+    return {
+      ok: true,
+      message: next ? `Next game: ${next.map((p) => p.name).join(", ")}` : "Game over. Not enough players in line for the next game yet.",
+    };
+  });
+}
+
+export async function moveOpenPlayToBackAction(fd: FormData) {
+  return run(async () => {
+    const user = await requireUser();
+    await moveToBack(str(fd, "playerId"), user);
+  });
+}
+
+export async function restOpenPlayAction(fd: FormData) {
+  return run(async () => {
+    const user = await requireUser();
+    await setResting(str(fd, "playerId"), str(fd, "resting") === "1", user);
+  });
+}
+
+export async function checkOutOpenPlayAction(fd: FormData) {
+  return run(async () => {
+    const user = await requireUser();
+    const method = str(fd, "method");
+    const r = await checkOutPlayer(
+      str(fd, "playerId"), method === "CASH" || method === "GCASH_MANUAL" ? method : null, str(fd, "gcashRef"), user,
+    );
+    const pesos = `₱${(r.centavos / 100).toLocaleString("en-PH")}`;
+    return {
+      ok: true,
+      message: `${r.name} checked out: ${r.hours} hr, ${pesos}.${r.substitute ? ` ${r.substitute} takes their place on court.` : ""}`,
+    };
   });
 }

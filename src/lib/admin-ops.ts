@@ -367,6 +367,7 @@ export async function createCourtBlock(date: string, startMinute: number, endMin
       },
     });
     await prisma.$transaction((tx) => audit(tx, user, "BLOCK_CREATED", b.id, { reason: reason.trim() }));
+    return b;
   } catch (e) {
     if (isOverlapError(e)) throw new AdminError(`${await conflictMessage(court.id, startAt, endAt)} Move or cancel those first.`);
     throw e;
