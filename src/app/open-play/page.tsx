@@ -5,6 +5,9 @@ import { PLAYERS_PER_GAME } from "@/lib/open-play-core";
 import { formatPeso } from "@/lib/pricing";
 import { todayInManila } from "@/lib/time";
 import AutoRefresh from "@/components/AutoRefresh";
+import LiveScore from "@/components/score/LiveScore";
+import Standings from "@/components/score/Standings";
+import { liveMatch, matchView, sessionStandings } from "@/lib/scoring";
 
 export const metadata: Metadata = { title: "Open play" };
 export const dynamic = "force-dynamic";
@@ -18,11 +21,17 @@ export default async function OpenPlayScreen() {
   const board = current ? await openPlayBoard(current.id) : null;
   const upcoming = await upcomingPublicSessions();
   const today = todayInManila();
+  const live = await liveMatch();
 
   if (!board) {
     return (
       <main className="mx-auto min-h-screen max-w-2xl px-5 py-10">
-        <AutoRefresh everyMs={60_000} maxTimes={600} />
+        <AutoRefresh everyMs={live ? 3_000 : 60_000} maxTimes={live ? 20_000 : 600} />
+        {live && (
+          <div className="mb-8 rounded-3xl bg-court p-5 text-white">
+            <LiveScore m={matchView(live)} size="md" />
+          </div>
+        )}
         <h1 className="font-display text-4xl font-extrabold text-court">Open play</h1>
         <p className="mt-2 text-lg text-muted">Walk in, put your name on the paddle stack, and play doubles. Pay per hour at the counter.</p>
         <h2 className="mt-8 font-display text-xl font-semibold">Schedule</h2>
@@ -47,6 +56,7 @@ export default async function OpenPlayScreen() {
   const isToday = sessionDate(s) === today;
   const upNext = line.slice(0, PLAYERS_PER_GAME);
   const rest = line.slice(PLAYERS_PER_GAME);
+  const table = await sessionStandings(s.id);
 
   return (
     <main className="min-h-screen bg-court px-5 py-6 text-white md:px-10">
@@ -60,6 +70,8 @@ export default async function OpenPlayScreen() {
       </header>
 
       {!isToday && <p className="mt-6 text-white/80">Not started yet.</p>}
+
+      {live && <div className="mt-6"><LiveScore m={matchView(live)} size="md" /></div>}
 
       <section className="mt-6">
         <h2 className="font-display text-xl font-semibold text-white/80">On court</h2>
@@ -97,6 +109,13 @@ export default async function OpenPlayScreen() {
               </li>
             ))}
           </ol>
+        </section>
+      )}
+
+      {table.length > 0 && (
+        <section className="mt-8 max-w-2xl">
+          <h2 className="font-display text-xl font-semibold text-ball">Tonight&rsquo;s leaderboard</h2>
+          <div className="mt-2 text-lg md:text-xl"><Standings rows={table} limit={10} dark /></div>
         </section>
       )}
     </main>

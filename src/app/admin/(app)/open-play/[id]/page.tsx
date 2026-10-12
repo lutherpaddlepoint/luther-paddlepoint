@@ -62,11 +62,14 @@ export default async function OpenPlayConsole({ params }: { params: { id: string
         <div>
           <h1 className="font-display text-3xl font-extrabold">Open play</h1>
           <p className="text-muted">
-            {sessionLabel(s)} · {peso(s.rateCentavosPerHour)}/hr · {checkedIn}/{s.maxPlayers} players · {s.gamesPlayed} games
+            {sessionLabel(s)} · {peso(s.rateCentavosPerHour)}/hr · {checkedIn}/{s.maxPlayers} players · {s.gamesPlayed} game{s.gamesPlayed === 1 ? "" : "s"}
             {s.status !== "SCHEDULED" && <b className="ml-2 text-red-700">{s.status === "CLOSED" ? "CLOSED" : "CANCELLED"}</b>}
           </p>
         </div>
-        <a href="/open-play" target="_blank" rel="noreferrer" className="rounded-xl border border-line bg-white px-4 py-2 text-sm font-bold">TV screen ↗</a>
+        <span className="flex flex-wrap gap-2">
+          <Link href="/admin/scoreboard" className="rounded-xl border border-line bg-white px-4 py-2 text-sm font-bold">Scoreboard</Link>
+          <a href="/open-play" target="_blank" rel="noreferrer" className="rounded-xl border border-line bg-white px-4 py-2 text-sm font-bold">TV screen ↗</a>
+        </span>
       </div>
 
       {live && !isToday && (
@@ -102,14 +105,16 @@ export default async function OpenPlayConsole({ params }: { params: { id: string
             </div>
             {onCourt.length === 0 ? (
               <p className="mt-4 text-white/75">
-                {line.length >= PLAYERS_PER_GAME ? "Court is empty. Tap “Start game”." : `Waiting for ${PLAYERS_PER_GAME - line.length} more player(s) in line.`}
+                {!live ? "This session is over."
+                  : line.length >= PLAYERS_PER_GAME ? "Court is empty. Tap “Start game”."
+                  : `Waiting for ${PLAYERS_PER_GAME - line.length} more player(s) in line.`}
               </p>
             ) : (
               <ul className="mt-4 grid grid-cols-2 gap-3">
                 {onCourt.map((p) => (
                   <li key={p.id} className="rounded-2xl bg-white/10 p-3">
                     <p className="font-display text-xl font-bold">{p.name}</p>
-                    <p className="text-xs text-white/70">{p.gamesPlayed} games so far</p>
+                    <p className="text-xs text-white/70">{p.gamesPlayed} game{p.gamesPlayed === 1 ? "" : "s"} so far</p>
                     {live && <div className="mt-2 text-ink"><CheckOut session={s} player={p} /></div>}
                   </li>
                 ))}

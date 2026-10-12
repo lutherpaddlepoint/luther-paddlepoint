@@ -17,8 +17,9 @@ export const sessionDate = (s: { date: Date }) => s.date.toISOString().slice(0, 
 export const sessionStartAt = (s: { date: Date; startMinute: number }) => manilaToUtc(sessionDate(s), s.startMinute);
 export const sessionEndAt = (s: { date: Date; endMinute: number }) => manilaToUtc(sessionDate(s), s.endMinute);
 
-const log = (tx: Tx, user: SessionUser, action: string, entityId: string, details?: Prisma.InputJsonValue) =>
-  tx.auditLog.create({ data: { action, entity: "open_play", entityId, userId: user.id, details } });
+// user is null when the referee (no login) ends a game from the scoreboard.
+const log = (tx: Tx, user: SessionUser | null, action: string, entityId: string, details?: Prisma.InputJsonValue) =>
+  tx.auditLog.create({ data: { action, entity: "open_play", entityId, userId: user?.id ?? null, details } });
 
 /** Locks the session for the rest of the transaction and returns it. */
 async function lockSession(tx: Tx, sessionId: string) {
@@ -160,7 +161,7 @@ export async function startNextGame(sessionId: string, user: SessionUser) {
 }
 
 /** Game over: the players on court go to the back of the line, then (optionally) the next 4 go on. */
-export async function finishGame(sessionId: string, startNext: boolean, user: SessionUser) {
+export async function finishGame(sessionId: string, startNext: boolean, user: SessionUser | null) {
   return prisma.$transaction(async (tx) => {
     const s = await lockSession(tx, sessionId);
     if (s.status !== "SCHEDULED") throw new AdminError("This session is closed.");

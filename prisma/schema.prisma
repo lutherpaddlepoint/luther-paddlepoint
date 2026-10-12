@@ -350,6 +350,43 @@ model OpenPlayPlayer {
   @@map("open_play_players")
 }
 
+// ---------------------------------------------------------------- Scoreboard (referee)
+// A referee taps who won each rally; the scoring rules live in src/lib/scoring-core.ts.
+// Only one match can be live at a time (one court), enforced in the migration.
+
+enum MatchStatus {
+  LIVE
+  FINISHED
+  ABANDONED
+
+  @@map("match_status")
+}
+
+model Match {
+  id                String      @id @default(uuid()) @db.Uuid
+  openPlaySessionId String?     @map("open_play_session_id") @db.Uuid
+  teamA             String[]    @map("team_a") // player names
+  teamB             String[]    @map("team_b")
+  teamAPlayerIds    String[]    @default([]) @map("team_a_player_ids") // open play player ids, if any
+  teamBPlayerIds    String[]    @default([]) @map("team_b_player_ids")
+  target            Int         // 11, 15 or 21
+  scoreA            Int         @default(0) @map("score_a")
+  scoreB            Int         @default(0) @map("score_b")
+  serving           String      @default("A") // "A" or "B"
+  server            Int         @default(2)   // 1 or 2 (starts at 2: the 0-0-2 rule)
+  rallies           Int         @default(0)
+  winner            String?     // "A" or "B"
+  history           Json        @default("[]") // earlier states, for Undo
+  status            MatchStatus @default(LIVE)
+  startedAt         DateTime    @default(now()) @map("started_at") @db.Timestamptz(6)
+  finishedAt        DateTime?   @map("finished_at") @db.Timestamptz(6)
+
+  @@index([status])
+  @@index([openPlaySessionId])
+  @@index([finishedAt])
+  @@map("matches")
+}
+
 enum NotificationChannel {
   EMAIL
   SMS

@@ -14,6 +14,7 @@ import {
 } from "@/lib/admin-ops";
 import { addStaff, changeOwnPassword, resetPassword, saveGeneral, saveRates, setActive } from "@/lib/settings-admin";
 import { prisma } from "@/lib/db";
+import { abandonMatchAsStaff, newRefereeToken, ScoreError } from "@/lib/scoring";
 import {
   addPlayer, cancelOpenPlay, checkOutPlayer, closeOpenPlay, createOpenPlay, finishGame, moveToBack, setResting, startNextGame,
 } from "@/lib/open-play";
@@ -40,7 +41,7 @@ async function run(fn: () => Promise<ActionResult | void>): Promise<ActionResult
   } catch (e) {
     // redirect() works by throwing; let it through.
     if ((e as { digest?: string })?.digest?.startsWith("NEXT_REDIRECT")) throw e;
-    if (e instanceof AdminError || e instanceof PaymentError) return { ok: false, error: e.message };
+    if (e instanceof AdminError || e instanceof PaymentError || e instanceof ScoreError) return { ok: false, error: e.message };
     console.error("Admin action failed", e);
     return { ok: false, error: "Something went wrong. Please try again." };
   }
@@ -399,5 +400,22 @@ export async function checkOutOpenPlayAction(fd: FormData) {
       ok: true,
       message: `${r.name} checked out: ${r.hours} hr, ${pesos}.${r.substitute ? ` ${r.substitute} takes their place on court.` : ""}`,
     };
+  });
+}
+
+// ---------------------------------------------------------------- scoreboard
+export async function newRefereeLinkAction() {
+  return run(async () => {
+    const user = await requireUser(["OWNER"]);
+    await newRefereeToken(user);
+    return { ok: true, message: "New referee link made. The old link and QR no longer work." };
+  });
+}
+
+export async function abandonMatchAction(fd: FormData) {
+  return run(async () => {
+    const user = await requireUser();
+    await abandonMatchAsStaff(str(fd, "matchId"), user);
+    return { ok: true, message: "Match cancelled. No result was saved." };
   });
 }
