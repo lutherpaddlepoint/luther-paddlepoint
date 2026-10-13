@@ -6,7 +6,7 @@ export async function getSettings(): Promise<AppSettings> {
   const rows = await prisma.setting.findMany();
   const merged: Record<string, unknown> = { ...DEFAULT_SETTINGS };
   for (const row of rows) {
-    if (row.key === "referee_token" || row.key === "court_timer") continue; // not general settings (secret / live state)
+    if (row.key.startsWith("referee_token") || row.key.startsWith("court_timer")) continue; // not general settings (secrets / live state)
     merged[row.key] = row.value;
   }
   return merged as AppSettings;

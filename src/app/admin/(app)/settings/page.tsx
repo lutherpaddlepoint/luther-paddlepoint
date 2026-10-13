@@ -29,10 +29,16 @@ export default async function SettingsPage() {
             <label className={labelCls}>Night rate from<HourSelect name="nightStart" from={0} to={1380} defaultMinute={rates.nightStartMinute} className={inputCls} /></label>
             <label className={labelCls}>Closes<HourSelect name="close" from={60} to={1440} defaultMinute={rates.closeMinute} className={inputCls} /></label>
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <label className={labelCls}>Court day rate (₱/hour)<input name="courtDay" inputMode="decimal" defaultValue={pesoInput(rates.courtDayCentavos)} className={inputCls} /></label>
-            <label className={labelCls}>Court night rate (₱/hour)<input name="courtNight" inputMode="decimal" defaultValue={pesoInput(rates.courtNightCentavos)} className={inputCls} /></label>
-          </div>
+          {rates.courts.map((c) => (
+            <fieldset key={c.id} className="grid gap-2 rounded-xl border border-line p-3">
+              <input type="hidden" name="courtId" value={c.id} />
+              <label className={labelCls}>Court name<input name={`courtName_${c.id}`} defaultValue={c.name} maxLength={40} className={inputCls} /></label>
+              <div className="grid grid-cols-2 gap-2">
+                <label className={labelCls}>Day rate (₱/hour)<input name={`courtDay_${c.id}`} inputMode="decimal" defaultValue={pesoInput(c.dayCentavos)} className={inputCls} /></label>
+                <label className={labelCls}>Night rate (₱/hour)<input name={`courtNight_${c.id}`} inputMode="decimal" defaultValue={pesoInput(c.nightCentavos)} className={inputCls} /></label>
+              </div>
+            </fieldset>
+          ))}
           <div className="grid grid-cols-3 gap-2">
             <label className={labelCls}>Pool adult (₱)<input name="poolAdult" inputMode="decimal" defaultValue={pesoInput(rates.poolAdultCentavos)} className={inputCls} /></label>
             <label className={labelCls}>Pool kid (₱)<input name="poolKid" inputMode="decimal" defaultValue={pesoInput(rates.poolKidCentavos)} className={inputCls} /></label>

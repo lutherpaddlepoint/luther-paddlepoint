@@ -79,7 +79,7 @@ test("walk-in paid in full creates two paid payments that add up to the total", 
 test("new rates apply to new bookings only", async () => {
   const before = await createHold(courtInput(fx, 8, 9, "A"));
   const form = await getRatesForm();
-  await saveRates({ ...form, courtDayCentavos: 300_00 }, fx.owner);
+  await saveRates({ ...form, courts: form.courts.map((c) => (c.id === fx.courtId ? { ...c, dayCentavos: 300_00 } : c)) }, fx.owner);
   const after = await createHold(courtInput(fx, 9, 10, "B"));
   assert.equal((await bookingByRef(before.referenceCode)).totalCentavos, 200_00);
   assert.equal((await bookingByRef(after.referenceCode)).totalCentavos, 300_00);

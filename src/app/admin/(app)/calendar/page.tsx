@@ -60,41 +60,45 @@ async function Week({ start, today }: { start: string; today: string }) {
   return (
     <div className="grid gap-8">
       <section>
-        <h2 className="font-display text-xl font-semibold">Pickleball court</h2>
-        <div className="mt-3 overflow-x-auto rounded-2xl border border-line bg-white">
-          <table className="w-full min-w-[760px] table-fixed border-collapse text-xs">
-            <thead>
-              <tr>
-                <th className="w-20" />
-                {w.days.map((d) => (
-                  <th key={d} className={`px-1 py-2 text-left font-bold ${d === today ? "text-court" : ""}`}>
-                    <Link href={`/admin/calendar?date=${d}&view=day`} className="hover:underline">
-                      {fmt(d, { weekday: "short" })} {fmt(d, { day: "numeric" })}
-                    </Link>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {w.grid.map((row) => (
-                <tr key={row.minute} className={row.isNight ? "bg-dusk/5" : ""}>
-                  <th className="whitespace-nowrap border-t border-line px-2 py-1 text-left font-normal text-muted">{row.label}</th>
-                  {row.cells.map((c, i) => (
-                    <td key={i} className="border-l border-t border-line p-0.5">
-                      {c ? (
-                        <Link href={`/admin/bookings/${c.id}`} className={`block truncate rounded px-1 py-1 ${CELL[c.kind === "BLOCK" ? "BLOCK" : c.status] ?? "bg-line"}`}>
-                          {c.label || "Booked"}
+        {w.courtGrids.map((court, ci) => (
+          <div key={court.id} className={ci ? "mt-6" : ""}>
+            <h2 className="font-display text-xl font-semibold">{w.courtGrids.length > 1 ? court.name : "Pickleball court"}</h2>
+            <div className="mt-3 overflow-x-auto rounded-2xl border border-line bg-white">
+              <table className="w-full min-w-[760px] table-fixed border-collapse text-xs">
+                <thead>
+                  <tr>
+                    <th className="w-20" />
+                    {w.days.map((d) => (
+                      <th key={d} className={`px-1 py-2 text-left font-bold ${d === today ? "text-court" : ""}`}>
+                        <Link href={`/admin/calendar?date=${d}&view=day`} className="hover:underline">
+                          {fmt(d, { weekday: "short" })} {fmt(d, { day: "numeric" })}
                         </Link>
-                      ) : (
-                        <span className="block py-1">&nbsp;</span>
-                      )}
-                    </td>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {court.grid.map((row) => (
+                    <tr key={row.minute} className={row.isNight ? "bg-dusk/5" : ""}>
+                      <th className="whitespace-nowrap border-t border-line px-2 py-1 text-left font-normal text-muted">{row.label}</th>
+                      {row.cells.map((c, i) => (
+                        <td key={i} className="border-l border-t border-line p-0.5">
+                          {c ? (
+                            <Link href={`/admin/bookings/${c.id}`} className={`block truncate rounded px-1 py-1 ${CELL[c.kind === "BLOCK" ? "BLOCK" : c.status] ?? "bg-line"}`}>
+                              {c.label || "Booked"}
+                            </Link>
+                          ) : (
+                            <span className="block py-1">&nbsp;</span>
+                          )}
+                        </td>
+                      ))}
+                    </tr>
                   ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ))}
         <p className="mt-2 flex flex-wrap gap-3 text-xs text-muted">
           <span><span className="mr-1 inline-block h-3 w-3 rounded bg-court align-middle" />Confirmed</span>
           <span><span className="mr-1 inline-block h-3 w-3 rounded bg-dusk align-middle" />Check payment</span>

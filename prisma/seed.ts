@@ -29,6 +29,9 @@ const generatedPassword = () => randomBytes(9).toString("base64url");
 async function main() {
   console.log("Clearing existing data…");
   await prisma.auditLog.deleteMany();
+  await prisma.match.deleteMany();
+  await prisma.openPlayPlayer.deleteMany();
+  await prisma.openPlaySession.deleteMany();
   await prisma.payment.deleteMany();
   await prisma.bookingLineItem.deleteMany();
   await prisma.booking.deleteMany();
@@ -58,11 +61,13 @@ async function main() {
 
   // --------------------------------------------------------------- amenities
   const court = await prisma.amenity.create({ data: { type: "COURT", name: "Pickleball Court 1" } });
+  const court2 = await prisma.amenity.create({ data: { type: "COURT", name: "Pickleball Court 2" } });
   const pool = await prisma.amenity.create({ data: { type: "POOL", name: "Swimming Pool", capacity: POOL_CAPACITY } });
 
   await prisma.rateRule.createMany({
     data: [
       ...COURT_RATES.map((r) => ({ ...r, guestType: null, amenityId: court.id })),
+      ...COURT_RATES.map((r) => ({ ...r, guestType: null, amenityId: court2.id })),
       ...POOL_RATES.map((r) => ({ ...r, guestType: r.guestType ?? null, amenityId: pool.id })),
     ],
   });

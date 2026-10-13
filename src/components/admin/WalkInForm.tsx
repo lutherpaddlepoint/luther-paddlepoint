@@ -13,7 +13,7 @@ type Props = {
   openMinute: number;
   closeMinute: number;
   feePercent: number;
-  courtRules: RateRuleInput[];
+  courts: { id: string; name: string; rules: RateRuleInput[] }[];
   poolRules: RateRuleInput[];
   sessions: { id: string; name: string; startMinute: number; endMinute: number }[];
 };
@@ -22,6 +22,8 @@ const pad = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:00`;
 
 export default function WalkInForm(p: Props) {
   const [amenity, setAmenity] = useState<"COURT" | "POOL">("COURT");
+  const [courtId, setCourtId] = useState(p.courts[0]?.id ?? "");
+  const courtRules = (p.courts.find((c) => c.id === courtId) ?? p.courts[0])?.rules ?? [];
   const [date, setDate] = useState(p.today);
   const firstStart = Math.min(Math.max(p.openMinute, p.nowHour), p.closeMinute - 60);
   const [start, setStart] = useState(pad(firstStart));
@@ -37,14 +39,14 @@ export default function WalkInForm(p: Props) {
   const quote = useMemo(() => {
     try {
       if (amenity === "COURT")
-        return quoteCourt({ date, startMinute: toMinute(start), endMinute: toMinute(end), rules: p.courtRules,
+        return quoteCourt({ date, startMinute: toMinute(start), endMinute: toMinute(end), rules: courtRules,
           openMinute: p.openMinute, closeMinute: p.closeMinute, feePercent: p.feePercent });
       const s = p.sessions.find((x) => x.id === sessionId);
       return s ? quotePool({ date, sessionStartMinute: s.startMinute, adults, kids, rules: p.poolRules, feePercent: p.feePercent }) : null;
     } catch {
       return null;
     }
-  }, [amenity, date, start, end, sessionId, adults, kids, p]);
+  }, [amenity, date, start, end, sessionId, adults, kids, p, courtRules]);
 
   const hours: number[] = [];
   for (let m = p.openMinute; m <= p.closeMinute; m += 60) hours.push(m);
@@ -61,6 +63,22 @@ export default function WalkInForm(p: Props) {
           </button>
         ))}
       </div>
+
+      {amenity === "COURT" && p.courts.length > 1 && (
+        <div className="grid gap-1">
+          <span className={labelCls}>Court</span>
+          <input type="hidden" name="courtId" value={courtId} />
+          <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Court">
+            {p.courts.map((c) => (
+              <button key={c.id} type="button" role="radio" aria-checked={courtId === c.id} onClick={() => setCourtId(c.id)}
+                className={`rounded-xl border-2 px-4 py-2 font-bold ${courtId === c.id ? "border-court bg-court/10" : "border-line bg-white"}`}>
+                {c.name.replace(/^pickleball\s+/i, "")}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {amenity === "COURT" && p.courts.length === 1 && <input type="hidden" name="courtId" value={courtId} />}
 
       <label className={labelCls}>Date<input type="date" name="date" value={date} min={p.today} onChange={(e) => setDate(e.target.value)} className={inputCls} /></label>
 

@@ -99,6 +99,7 @@ export async function walkInAction(fd: FormData) {
     const b = await createWalkIn(
       {
         amenity,
+        courtId: str(fd, "courtId") || undefined,
         date: str(fd, "date"),
         startMinute: minute(fd, "start"),
         endMinute: minute(fd, "end"),
@@ -204,8 +205,22 @@ export async function rescheduleAction(fd: FormData) {
 export async function blockAction(fd: FormData) {
   return run(async () => {
     const user = await requireUser(["OWNER"]);
-    await createCourtBlock(str(fd, "date"), minute(fd, "start"), minute(fd, "end"), str(fd, "reason"), user);
-    return { ok: true, message: "Court blocked." };
+    const which = str(fd, "courtId");
+    const ids = which === "ALL"
+      ? (await prisma.amenity.findMany({ where: { type: "COURT", isActive: true }, orderBy: { name: "asc" }, select: { id: true } })).map((c) => c.id)
+      : [which || null];
+    // Each court is blocked on its own; if one has a booking in the way, the others stay blocked and we say so.
+    const done: string[] = [];
+    for (const id of ids) {
+      try {
+        const blk = await createCourtBlock(str(fd, "date"), minute(fd, "start"), minute(fd, "end"), str(fd, "reason"), user, id);
+        done.push(blk.amenityId);
+      } catch (e) {
+        if (done.length && e instanceof AdminError) return { ok: false, error: `Blocked ${done.length} court(s), but not this one. ${e.message}` };
+        throw e;
+      }
+    }
+    return { ok: true, message: done.length > 1 ? `Blocked ${done.length} courts.` : "Court blocked." };
   });
 }
 
@@ -238,7 +253,10 @@ export async function saveRatesAction(fd: FormData) {
     await saveRates(
       {
         openMinute: minute(fd, "open"), closeMinute: minute(fd, "close"), nightStartMinute: minute(fd, "nightStart"),
-        courtDayCentavos: centavos(fd, "courtDay"), courtNightCentavos: centavos(fd, "courtNight"),
+        courts: fd.getAll("courtId").map((v) => {
+          const id = String(v);
+          return { id, name: str(fd, `courtName_${id}`), dayCentavos: centavos(fd, `courtDay_${id}`), nightCentavos: centavos(fd, `courtNight_${id}`) };
+        }),
         poolAdultCentavos: centavos(fd, "poolAdult"), poolKidCentavos: centavos(fd, "poolKid"),
         poolCapacity: int(fd, "poolCapacity"),
       },
@@ -325,6 +343,7 @@ export async function createOpenPlayAction(fd: FormData) {
   return run(async () => {
     const user = await requireUser();
     const s = await createOpenPlay({
+      courtId: str(fd, "courtId") || undefined,
       date: str(fd, "date"), startMinute: minute(fd, "start"), endMinute: minute(fd, "end"),
       rateCentavosPerHour: centavos(fd, "rate"), maxPlayers: int(fd, "maxPlayers"), notes: str(fd, "notes"),
     }, user);
@@ -405,10 +424,13 @@ export async function checkOutOpenPlayAction(fd: FormData) {
 }
 
 // ---------------------------------------------------------------- scoreboard
-export async function newRefereeLinkAction() {
+export async function newRefereeLinkAction(fd: FormData) {
   return run(async () => {
     const user = await requireUser(["OWNER"]);
-    await newRefereeToken(user);
+    const id = str(fd, "courtId");
+    const court = /^[0-9a-f-]{36}$/i.test(id) ? await prisma.amenity.findFirst({ where: { id, type: "COURT" } }) : null;
+    if (!court) return { ok: false, error: "Court not found." };
+    await newRefereeToken(court.id, user);
     return { ok: true, message: "New referee link made. The old link and QR no longer work." };
   });
 }
@@ -434,15 +456,15 @@ export async function extendCourtTimerAction(fd: FormData) {
   return run(async () => {
     const user = await requireUser();
     const m = int(fd, "minutes");
-    await extendCourtTimer(m, user);
+    await extendCourtTimer(str(fd, "courtId"), m, user);
     return { ok: true, message: `Added ${m} minutes.` };
   });
 }
 
-export async function stopCourtTimerAction() {
+export async function stopCourtTimerAction(fd: FormData) {
   return run(async () => {
     const user = await requireUser();
-    await stopCourtTimer(user);
+    await stopCourtTimer(str(fd, "courtId"), user);
     return { ok: true, message: "Countdown stopped." };
   });
 }

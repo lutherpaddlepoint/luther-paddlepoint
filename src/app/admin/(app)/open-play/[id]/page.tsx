@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { amountDue, openPlayBoard, sessionDate, sessionLabel } from "@/lib/open-play";
 import { PLAYERS_PER_GAME } from "@/lib/open-play-core";
+import { courtNumber } from "@/lib/courts-core";
 import { formatPeso } from "@/lib/pricing";
 import { todayInManila } from "@/lib/time";
 import ActionForm, { inputCls, labelCls } from "@/components/admin/ActionForm";
@@ -60,7 +61,7 @@ export default async function OpenPlayConsole({ params }: { params: { id: string
       <Link href="/admin/open-play" className="text-sm text-muted hover:underline">← All open play</Link>
       <div className="mt-1 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="font-display text-3xl font-extrabold">Open play</h1>
+          <h1 className="font-display text-3xl font-extrabold">Open play <span className="text-court">· {s.amenity.name.replace(/^pickleball\s+/i, "")}</span></h1>
           <p className="text-muted">
             {sessionLabel(s)} · {peso(s.rateCentavosPerHour)}/hr · {checkedIn}/{s.maxPlayers} players · {s.gamesPlayed} game{s.gamesPlayed === 1 ? "" : "s"}
             {s.status !== "SCHEDULED" && <b className="ml-2 text-red-700">{s.status === "CLOSED" ? "CLOSED" : "CANCELLED"}</b>}
@@ -68,7 +69,7 @@ export default async function OpenPlayConsole({ params }: { params: { id: string
         </div>
         <span className="flex flex-wrap gap-2">
           <Link href="/admin/scoreboard" className="rounded-xl border border-line bg-white px-4 py-2 text-sm font-bold">Scoreboard</Link>
-          <a href="/open-play" target="_blank" rel="noreferrer" className="rounded-xl border border-line bg-white px-4 py-2 text-sm font-bold">TV screen ↗</a>
+          <a href={`/open-play?court=${courtNumber(s.amenity.name)}`} target="_blank" rel="noreferrer" className="rounded-xl border border-line bg-white px-4 py-2 text-sm font-bold">TV screen ↗</a>
         </span>
       </div>
 

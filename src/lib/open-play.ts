@@ -45,6 +45,7 @@ async function lastPos(tx: Tx, sessionId: string) {
 // ---------------------------------------------------------------- sessions
 
 export type NewOpenPlay = {
+  courtId?: string; // which court (default: the first court)
   date: string;
   startMinute: number;
   endMinute: number;
@@ -65,11 +66,12 @@ export async function createOpenPlay(input: NewOpenPlay, user: SessionUser) {
 
   // Block the court first; this fails with a clear message if someone already booked those hours.
   const label = `Open play${input.notes?.trim() ? `: ${input.notes.trim()}` : ""}`;
-  const block = await createCourtBlock(input.date, input.startMinute, input.endMinute, label, user);
+  const block = await createCourtBlock(input.date, input.startMinute, input.endMinute, label, user, input.courtId);
   try {
     return await prisma.$transaction(async (tx) => {
       const s = await tx.openPlaySession.create({
         data: {
+          amenityId: block.amenityId,
           date: dateOnly(input.date), startMinute: input.startMinute, endMinute: input.endMinute,
           rateCentavosPerHour: input.rateCentavosPerHour, maxPlayers: input.maxPlayers,
           notes: input.notes?.trim() || null, blockBookingId: block.id, createdById: user.id,
@@ -267,7 +269,7 @@ export async function listOpenPlay(fromDate: string) {
   return prisma.openPlaySession.findMany({
     where: { date: { gte: dateOnly(fromDate) }, status: { not: "CANCELLED" } },
     orderBy: [{ date: "asc" }, { startMinute: "asc" }],
-    include: { _count: { select: { players: true } } },
+    include: { _count: { select: { players: true } }, amenity: { select: { name: true } } },
     take: 50,
   });
 }
@@ -275,7 +277,7 @@ export async function listOpenPlay(fromDate: string) {
 export async function openPlayBoard(sessionId: string) {
   const s = await prisma.openPlaySession.findUnique({
     where: { id: sessionId },
-    include: { players: { orderBy: { queuePos: "asc" } } },
+    include: { players: { orderBy: { queuePos: "asc" } }, amenity: { select: { name: true } } },
   });
   if (!s) return null;
   return {
@@ -287,11 +289,14 @@ export async function openPlayBoard(sessionId: string) {
   };
 }
 
-/** The session the public screen should show: today's, the one running now or the next one later today. */
-export async function currentPublicSession() {
+/**
+ * The session the public screen should show: today's, the one running now or the next one later today.
+ * With a court, only that court's sessions count.
+ */
+export async function currentPublicSession(courtId?: string | null) {
   const today = todayInManila();
   const sessions = await prisma.openPlaySession.findMany({
-    where: { date: dateOnly(today), status: "SCHEDULED" },
+    where: { date: dateOnly(today), status: "SCHEDULED", ...(courtId ? { amenityId: courtId } : {}) },
     orderBy: { startMinute: "asc" },
   });
   const now = Date.now();
@@ -302,6 +307,7 @@ export async function upcomingPublicSessions(limit = 6) {
   return prisma.openPlaySession.findMany({
     where: { date: { gte: dateOnly(todayInManila()) }, status: "SCHEDULED" },
     orderBy: [{ date: "asc" }, { startMinute: "asc" }],
+    include: { amenity: { select: { name: true } } },
     take: limit,
   });
 }

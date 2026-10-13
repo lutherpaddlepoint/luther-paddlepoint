@@ -36,8 +36,10 @@ export function buildReport(args: {
   openMinute: number;
   closeMinute: number;
   lightsOnMinute: number;
+  courtCount?: number; // number of courts (open hours count once per court)
 }) {
   const { bookings, payments, days, openMinute, closeMinute, lightsOnMinute } = args;
+  const courtCount = Math.max(1, args.courtCount ?? 1);
   const used = bookings.filter((b) => b.kind === "BOOKING" && USED_STATUSES.includes(b.status));
   const blocks = bookings.filter((b) => b.kind === "BLOCK" && b.status === "CONFIRMED");
   const hours = (b: { startAt: Date; endAt: Date }) => (b.endAt.getTime() - b.startAt.getTime()) / 3_600_000;
@@ -54,7 +56,7 @@ export function buildReport(args: {
 
   const openHoursPerDay = (closeMinute - openMinute) / 60;
   const blockedHours = sum(blocks.filter((b) => b.amenityType === "COURT").map(hours));
-  const courtHoursAvailable = Math.max(0, days.length * openHoursPerDay - blockedHours);
+  const courtHoursAvailable = Math.max(0, days.length * openHoursPerDay * courtCount - blockedHours);
   const courtHoursBooked = sum(court.map(hours));
 
   const collected = {

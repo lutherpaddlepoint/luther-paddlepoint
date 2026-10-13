@@ -16,12 +16,13 @@ const log = (tx: Prisma.TransactionClient, user: SessionUser, action: string, de
 const setSetting = (tx: Prisma.TransactionClient, key: keyof AppSettings, value: unknown) =>
   tx.setting.upsert({ where: { key }, update: { value: value as Prisma.InputJsonValue }, create: { key, value: value as Prisma.InputJsonValue } });
 
+export type CourtRateInput = { id: string; name: string; dayCentavos: number; nightCentavos: number };
+
 export type RatesInput = {
   openMinute: number;
   closeMinute: number;
   nightStartMinute: number;
-  courtDayCentavos: number;
-  courtNightCentavos: number;
+  courts: CourtRateInput[];
   poolAdultCentavos: number;
   poolKidCentavos: number;
   poolCapacity: number;
@@ -29,16 +30,22 @@ export type RatesInput = {
 
 export async function getRatesForm(): Promise<RatesInput> {
   const s = await getSettings();
-  const [court, pool] = await Promise.all([
-    prisma.amenity.findFirst({ where: { type: "COURT", isActive: true }, include: { rateRules: { where: { isActive: true, unit: "PER_HOUR" }, orderBy: { startMinute: "asc" } } } }),
+  const [courts, pool] = await Promise.all([
+    prisma.amenity.findMany({
+      where: { type: "COURT", isActive: true }, orderBy: { name: "asc" },
+      include: { rateRules: { where: { isActive: true, unit: "PER_HOUR" }, orderBy: { startMinute: "asc" } } },
+    }),
     prisma.amenity.findFirst({ where: { type: "POOL", isActive: true }, include: { rateRules: { where: { isActive: true, unit: "PER_PERSON" } } } }),
   ]);
   return {
     openMinute: s.operating_hours.openMinute,
     closeMinute: s.operating_hours.closeMinute,
     nightStartMinute: s.lights_on_minute,
-    courtDayCentavos: court?.rateRules[0]?.priceCentavos ?? 0,
-    courtNightCentavos: court?.rateRules.at(-1)?.priceCentavos ?? 0,
+    courts: courts.map((c) => ({
+      id: c.id, name: c.name,
+      dayCentavos: c.rateRules[0]?.priceCentavos ?? 0,
+      nightCentavos: c.rateRules.at(-1)?.priceCentavos ?? 0,
+    })),
     poolAdultCentavos: pool?.rateRules.find((r) => r.guestType === "ADULT")?.priceCentavos ?? 0,
     poolKidCentavos: pool?.rateRules.find((r) => r.guestType === "KID")?.priceCentavos ?? 0,
     poolCapacity: pool?.capacity ?? 30,
@@ -50,29 +57,36 @@ export async function getRatesForm(): Promise<RatesInput> {
  * night: night start→close); pool sessions follow the same split.
  */
 export async function saveRates(r: RatesInput, user: SessionUser) {
-  const ints = Object.values(r);
+  const ints = [r.openMinute, r.closeMinute, r.nightStartMinute, r.poolAdultCentavos, r.poolKidCentavos, r.poolCapacity,
+    ...r.courts.flatMap((c) => [c.dayCentavos, c.nightCentavos])];
   if (ints.some((v) => !Number.isFinite(v) || v < 0)) throw new AdminError("Check the numbers: they can't be empty or negative.");
   if (!(r.openMinute < r.nightStartMinute && r.nightStartMinute < r.closeMinute))
     throw new AdminError("Night rate must start after opening time and before closing time.");
   if (r.openMinute % 60 || r.closeMinute % 60 || r.nightStartMinute % 60) throw new AdminError("Times must be on the hour.");
   if (r.poolCapacity < 1 || r.poolCapacity > 500) throw new AdminError("Pool capacity must be between 1 and 500.");
-  if (r.courtDayCentavos < 100 || r.courtNightCentavos < 100 || r.poolAdultCentavos < 100)
+  if (r.courts.some((c) => c.dayCentavos < 100 || c.nightCentavos < 100) || r.poolAdultCentavos < 100)
     throw new AdminError("Prices must be at least ₱1.");
+  const names = r.courts.map((c) => c.name.trim().replace(/\s+/g, " "));
+  if (names.some((n) => n.length < 2 || n.length > 40)) throw new AdminError("Court names must be 2 to 40 characters.");
+  if (new Set(names.map((n) => n.toLowerCase())).size !== names.length) throw new AdminError("Each court needs a different name.");
 
-  const [court, pool] = await Promise.all([
-    prisma.amenity.findFirst({ where: { type: "COURT", isActive: true } }),
+  const [courtList, pool] = await Promise.all([
+    prisma.amenity.findMany({ where: { type: "COURT", isActive: true } }),
     prisma.amenity.findFirst({ where: { type: "POOL", isActive: true }, include: { poolSessions: { orderBy: { startMinute: "asc" } } } }),
   ]);
   const before = await getRatesForm();
 
   try {
     await prisma.$transaction(async (tx) => {
-      if (court) {
+      for (const [i, c] of r.courts.entries()) {
+        const court = courtList.find((x) => x.id === c.id);
+        if (!court) continue; // removed or unknown court: ignore
+        if (court.name !== names[i]) await tx.amenity.update({ where: { id: court.id }, data: { name: names[i] } });
         await tx.rateRule.updateMany({ where: { amenityId: court.id, unit: "PER_HOUR" }, data: { isActive: false } });
         await tx.rateRule.createMany({
           data: [
-            { amenityId: court.id, label: "Day rate", startMinute: r.openMinute, endMinute: r.nightStartMinute, priceCentavos: r.courtDayCentavos, unit: "PER_HOUR" },
-            { amenityId: court.id, label: "Night rate", startMinute: r.nightStartMinute, endMinute: r.closeMinute, priceCentavos: r.courtNightCentavos, unit: "PER_HOUR" },
+            { amenityId: court.id, label: "Day rate", startMinute: r.openMinute, endMinute: r.nightStartMinute, priceCentavos: c.dayCentavos, unit: "PER_HOUR" },
+            { amenityId: court.id, label: "Night rate", startMinute: r.nightStartMinute, endMinute: r.closeMinute, priceCentavos: c.nightCentavos, unit: "PER_HOUR" },
           ],
         });
       }

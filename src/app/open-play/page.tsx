@@ -9,6 +9,8 @@ import TvClock from "@/components/TvClock";
 import LiveScore from "@/components/score/LiveScore";
 import Standings from "@/components/score/Standings";
 import { liveMatch, matchView, sessionStandings } from "@/lib/scoring";
+import { courtFromParam } from "@/lib/courts";
+import { shortCourtName } from "@/lib/courts-core";
 
 export const metadata: Metadata = { title: "Open play" };
 export const dynamic = "force-dynamic";
@@ -17,12 +19,16 @@ const peso = (c: number) => formatPeso(c).replace(".00", "");
 
 // Public screen for the TV by the court, or for players' phones.
 // Shows only nicknames: never mobile numbers or amounts.
-export default async function OpenPlayScreen() {
-  const current = await currentPublicSession();
+// One screen per court: /open-play?court=2. Without a number it shows the first court that has
+// open play today (or the first court).
+export default async function OpenPlayScreen({ searchParams }: { searchParams: { court?: string } }) {
+  const { court: picked, courts } = await courtFromParam(searchParams.court);
+  const current = await currentPublicSession(searchParams.court ? picked?.id : undefined);
+  const court = current ? courts.find((c) => c.id === current!.amenityId) ?? picked : picked;
   const board = current ? await openPlayBoard(current.id) : null;
   const upcoming = await upcomingPublicSessions();
   const today = todayInManila();
-  const live = await liveMatch();
+  const live = court ? await liveMatch(court.id) : null;
 
   if (!board) {
     return (
@@ -42,7 +48,7 @@ export default async function OpenPlayScreen() {
           <ul className="mt-3 grid gap-2">
             {upcoming.map((s) => (
               <li key={s.id} className="rounded-2xl border border-line bg-white px-5 py-4">
-                <span className="block font-display text-lg font-semibold">{sessionLabel(s)}</span>
+                <span className="block font-display text-lg font-semibold">{sessionLabel(s)}{courts.length > 1 ? ` · ${shortCourtName(s.amenity.name)}` : ""}</span>
                 <span className="text-muted">{peso(s.rateCentavosPerHour)}/hr per player · up to {s.maxPlayers} players{s.notes ? ` · ${s.notes}` : ""}</span>
               </li>
             ))}
@@ -64,7 +70,7 @@ export default async function OpenPlayScreen() {
       <AutoRefresh everyMs={5_000} maxTimes={20_000} />
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="font-display text-lg font-semibold text-ball">Open play</p>
+          <p className="font-display text-lg font-semibold text-ball">Open play{courts.length > 1 && court ? ` · ${court.short}` : ""}</p>
           <h1 className="font-display text-3xl font-extrabold md:text-4xl">{sessionLabel(s)}</h1>
         </div>
         <div className="flex items-end gap-6">

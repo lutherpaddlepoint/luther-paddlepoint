@@ -75,3 +75,23 @@ test("the database itself refuses an overlap even if app checks are bypassed", a
     /bookings_no_overlap|23P01/,
   );
 });
+
+test("two courts: the same hour can be booked once on each court, never twice on one", async () => {
+  const court2 = await prisma.amenity.create({ data: { type: "COURT", name: "Pickleball Court 2" } });
+  const rules = await prisma.rateRule.findMany({ where: { amenityId: fx.courtId, isActive: true } });
+  await prisma.rateRule.createMany({ data: rules.map(({ id: _id, amenityId: _a, ...r }) => ({ ...r, amenityId: court2.id })) });
+
+  const results = await Promise.allSettled([
+    createHold(courtInput(fx, 16, 17, "A")),
+    createHold({ ...courtInput(fx, 16, 17, "B"), amenityId: court2.id }),
+    createHold({ ...courtInput(fx, 16, 17, "C"), amenityId: court2.id }),
+  ]);
+  assert.equal(fulfilled(results).length, 2); // one on each court
+  const byCourt = await prisma.booking.groupBy({ by: ["amenityId"], where: { status: "HOLD" }, _count: { _all: true } });
+  assert.deepEqual(byCourt.map((r) => r._count._all).sort(), [1, 1]);
+
+  // A block on Court 2 leaves Court 1 alone.
+  await createCourtBlock(fx.tomorrow, 8 * 60, 10 * 60, "Court 2 repairs", fx.owner, court2.id);
+  await createHold(courtInput(fx, 8, 9, "D"));
+  await assert.rejects(createHold({ ...courtInput(fx, 8, 9, "E"), amenityId: court2.id }), BookingError);
+});

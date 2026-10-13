@@ -119,9 +119,11 @@ model Amenity {
   capacity Int?        // pool: max guests per session (30). null for court.
   isActive Boolean     @default(true) @map("is_active")
 
-  rateRules    RateRule[]
-  poolSessions PoolSession[]
-  bookings     Booking[]
+  rateRules        RateRule[]
+  poolSessions     PoolSession[]
+  bookings         Booking[]
+  openPlaySessions OpenPlaySession[]
+  matches          Match[]
 
   @@map("amenities")
 }
@@ -311,6 +313,7 @@ enum OpenPlayPlayerState {
 
 model OpenPlaySession {
   id                 String         @id @default(uuid()) @db.Uuid
+  amenityId          String         @map("amenity_id") @db.Uuid // the court
   date               DateTime       @db.Date // Manila calendar date
   startMinute        Int            @map("start_minute")
   endMinute          Int            @map("end_minute")
@@ -323,9 +326,11 @@ model OpenPlaySession {
   createdById        String?        @map("created_by") @db.Uuid
   createdAt          DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
 
+  amenity Amenity          @relation(fields: [amenityId], references: [id])
   players OpenPlayPlayer[]
 
   @@index([date])
+  @@index([amenityId])
   @@map("open_play_sessions")
 }
 
@@ -364,6 +369,7 @@ enum MatchStatus {
 
 model Match {
   id                String      @id @default(uuid()) @db.Uuid
+  amenityId         String      @map("amenity_id") @db.Uuid // the court (one LIVE match per court)
   openPlaySessionId String?     @map("open_play_session_id") @db.Uuid
   teamA             String[]    @map("team_a") // player names
   teamB             String[]    @map("team_b")
@@ -381,7 +387,10 @@ model Match {
   startedAt         DateTime    @default(now()) @map("started_at") @db.Timestamptz(6)
   finishedAt        DateTime?   @map("finished_at") @db.Timestamptz(6)
 
+  amenity Amenity @relation(fields: [amenityId], references: [id])
+
   @@index([status])
+  @@index([amenityId])
   @@index([openPlaySessionId])
   @@index([finishedAt])
   @@map("matches")

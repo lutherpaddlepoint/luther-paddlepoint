@@ -12,10 +12,11 @@ export default async function BlocksPage() {
   const settings = await getSettings();
   const today = todayInManila();
   const { openMinute, closeMinute } = settings.operating_hours;
-  const [blocks, sessions, closures] = await Promise.all([
+  const [blocks, sessions, closures, courts] = await Promise.all([
     prisma.booking.findMany({
       where: { kind: "BLOCK", status: "CONFIRMED", endAt: { gt: manilaToUtc(today, 0) } },
       orderBy: { startAt: "asc" },
+      include: { amenity: { select: { name: true } } },
     }),
     prisma.poolSession.findMany({ where: { isActive: true }, orderBy: { startMinute: "asc" } }),
     prisma.poolSessionInventory.findMany({
@@ -23,14 +24,23 @@ export default async function BlocksPage() {
       include: { poolSession: true },
       orderBy: { date: "asc" },
     }),
+    prisma.amenity.findMany({ where: { type: "COURT", isActive: true }, orderBy: { name: "asc" } }),
   ]);
 
   return (
     <div className="grid gap-10 lg:grid-cols-2">
       <section>
-        <h1 className="font-display text-2xl font-extrabold">Block the court</h1>
+        <h1 className="font-display text-2xl font-extrabold">{courts.length > 1 ? "Block a court" : "Block the court"}</h1>
         <p className="mt-1 text-muted">For maintenance, events or tournaments. Customers will see these hours as closed.</p>
         <ActionForm action={blockAction} submitLabel="Block these hours" className="mt-4 grid gap-3 rounded-2xl border border-line bg-white p-5" resetOnSuccess>
+          {courts.length > 1 ? (
+            <label className={labelCls}>Court
+              <select name="courtId" className={inputCls} defaultValue="ALL">
+                <option value="ALL">All courts</option>
+                {courts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </label>
+          ) : <input type="hidden" name="courtId" value={courts[0]?.id ?? ""} />}
           <label className={labelCls}>Date<input type="date" name="date" min={today} defaultValue={today} className={inputCls} required /></label>
           <div className="grid grid-cols-2 gap-2">
             <label className={labelCls}>From<HourSelect name="start" from={openMinute} to={closeMinute - 60} className={inputCls} /></label>
@@ -49,6 +59,7 @@ export default async function BlocksPage() {
                 <li key={b.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-white px-4 py-2">
                   <Link href={`/admin/bookings/${b.id}`} className="hover:underline">
                     <span className="font-bold">{s.date}, {formatMinute(s.minuteOfDay)}–{formatMinute(e.minuteOfDay)}</span>
+                    {courts.length > 1 && <span className="ml-2 text-sm font-bold text-court">{b.amenity.name}</span>}
                     <span className="block text-sm text-muted">{b.notes}</span>
                   </Link>
                   <ActionForm action={removeBlockAction} submitLabel="Remove" tone="plain" confirm="Open this time for bookings again?">

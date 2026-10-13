@@ -9,13 +9,16 @@ const time = (iso: string) =>
  * Staff controls for the TV countdown. With `bookingId`, offers to start it for that booking;
  * when a timer is running, offers +10 / +30 minutes and Stop.
  */
-export default function CourtTimerControls({ timer, bookingId }: { timer: CourtTimer | null; bookingId?: string }) {
+export default function CourtTimerControls({ timer, bookingId, courtId, courtName, courtNumber }: {
+  timer: CourtTimer | null; bookingId?: string; courtId: string; courtName?: string; courtNumber?: number;
+}) {
   const runningHere = !!timer && (!bookingId || timer.bookingId === bookingId);
+  const tv = courtNumber ? `/score?court=${courtNumber}` : "/score";
   return (
     <section className="rounded-2xl border border-line bg-white p-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="font-display text-xl font-semibold">Court countdown (TV)</h2>
-        <a href="/score" target="_blank" rel="noreferrer" className="text-sm font-bold text-court underline">Open TV screen ↗</a>
+        <h2 className="font-display text-xl font-semibold">{courtName ? `${courtName} countdown (TV)` : "Court countdown (TV)"}</h2>
+        <a href={tv} target="_blank" rel="noreferrer" className="text-sm font-bold text-court underline">Open TV screen ↗</a>
       </div>
       {runningHere ? (
         <>
@@ -26,10 +29,13 @@ export default function CourtTimerControls({ timer, bookingId }: { timer: CourtT
           <div className="mt-3 flex flex-wrap gap-2 [&_button]:mt-0">
             {[10, 30, 60].map((m) => (
               <ActionForm key={m} action={extendCourtTimerAction} submitLabel={`+${m} min`} tone="plain">
+                <input type="hidden" name="courtId" value={courtId} />
                 <input type="hidden" name="minutes" value={m} />
               </ActionForm>
             ))}
-            <ActionForm action={stopCourtTimerAction} submitLabel="Stop countdown" tone="plain" confirm="Stop the countdown on the TV?" />
+            <ActionForm action={stopCourtTimerAction} submitLabel="Stop countdown" tone="plain" confirm="Stop the countdown on the TV?">
+              <input type="hidden" name="courtId" value={courtId} />
+            </ActionForm>
           </div>
         </>
       ) : bookingId ? (

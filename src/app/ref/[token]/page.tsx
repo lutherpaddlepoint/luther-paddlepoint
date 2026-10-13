@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { isValidRefereeToken, liveMatch, matchView } from "@/lib/scoring";
+import { liveMatch, matchView, refereeCourt } from "@/lib/scoring";
+import { prisma } from "@/lib/db";
 import { currentPublicSession, openPlayBoard } from "@/lib/open-play";
 import { TARGETS } from "@/lib/scoring-core";
 import ActionForm, { inputCls, labelCls } from "@/components/admin/ActionForm";
@@ -21,7 +22,8 @@ function TargetSelect() {
 }
 
 export default async function RefereePage({ params }: { params: { token: string } }) {
-  if (!(await isValidRefereeToken(params.token))) {
+  const courtId = await refereeCourt(params.token);
+  if (!courtId) {
     return (
       <main className="mx-auto max-w-md px-5 py-16 text-center">
         <h1 className="font-display text-2xl font-extrabold">Referee link not valid</h1>
@@ -30,16 +32,21 @@ export default async function RefereePage({ params }: { params: { token: string 
     );
   }
 
-  const live = await liveMatch();
+  const court = await prisma.amenity.findUnique({ where: { id: courtId }, select: { name: true } });
+  const courtCount = await prisma.amenity.count({ where: { type: "COURT", isActive: true } });
+  const courtLabel = courtCount > 1 && court ? court.name.replace(/^pickleball\s+/i, "") : null;
+
+  const live = await liveMatch(courtId);
   if (live) {
     return (
       <main className="min-h-screen bg-court px-3 py-4">
+        {courtLabel && <p className="mx-auto mb-2 max-w-3xl font-display text-lg font-bold text-ball">{courtLabel}</p>}
         <RefereePad token={params.token} m={matchView(live)} />
       </main>
     );
   }
 
-  const session = await currentPublicSession();
+  const session = await currentPublicSession(courtId);
   const board = session ? await openPlayBoard(session.id) : null;
   const onCourt = board?.onCourt ?? [];
   const [p1, p2, p3, p4] = onCourt.map((p) => p.name);
@@ -47,8 +54,8 @@ export default async function RefereePage({ params }: { params: { token: string 
   return (
     <main className="mx-auto max-w-xl px-5 py-6">
       {/* Picks up the next open play game as soon as the staff puts 4 players on court. */}
-      <AutoRefresh everyMs={10_000} maxTimes={1000} />
-      <h1 className="font-display text-3xl font-extrabold text-court">Referee</h1>
+      {board && onCourt.length !== 4 && <AutoRefresh everyMs={10_000} maxTimes={1000} />}
+      <h1 className="font-display text-3xl font-extrabold text-court">Referee{courtLabel ? ` · ${courtLabel}` : ""}</h1>
       <p className="text-muted">Start a match, then tap the team that wins each rally. The score shows on the TV.</p>
 
       {board && (
@@ -81,11 +88,17 @@ export default async function RefereePage({ params }: { params: { token: string 
         <p className="text-sm text-muted">For court bookings or friendly games. Team A serves first.</p>
         <ActionForm action={refStartQuickAction} submitLabel="Start match" full className="mt-3 grid gap-3">
           <input type="hidden" name="token" value={params.token} />
-          <div className="grid grid-cols-2 gap-2">
-            <label className={labelCls}>Team A, player 1<input name="a1" maxLength={30} className={inputCls} required autoComplete="off" /></label>
-            <label className={labelCls}>Team A, player 2<input name="a2" maxLength={30} className={inputCls} required autoComplete="off" /></label>
-            <label className={labelCls}>Team B, player 1<input name="b1" maxLength={30} className={inputCls} required autoComplete="off" /></label>
-            <label className={labelCls}>Team B, player 2<input name="b2" maxLength={30} className={inputCls} required autoComplete="off" /></label>
+          <div className="grid grid-cols-2 gap-3">
+            <fieldset className="grid content-start gap-2 rounded-xl bg-ball/30 p-3">
+              <legend className="font-display font-bold">Team A <span className="text-sm font-normal text-muted">(serves first)</span></legend>
+              <label className={labelCls}>Player 1<input name="a1" maxLength={30} className={inputCls} required autoComplete="off" /></label>
+              <label className={labelCls}>Player 2<input name="a2" maxLength={30} className={inputCls} required autoComplete="off" /></label>
+            </fieldset>
+            <fieldset className="grid content-start gap-2 rounded-xl bg-paper p-3">
+              <legend className="font-display font-bold">Team B</legend>
+              <label className={labelCls}>Player 1<input name="b1" maxLength={30} className={inputCls} required autoComplete="off" /></label>
+              <label className={labelCls}>Player 2<input name="b2" maxLength={30} className={inputCls} required autoComplete="off" /></label>
+            </fieldset>
           </div>
           <TargetSelect />
         </ActionForm>

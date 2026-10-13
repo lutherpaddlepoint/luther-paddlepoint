@@ -69,32 +69,37 @@ export async function dayView(date: string) {
   const dayStart = manilaToUtc(date, 0);
   const dayEnd = manilaToUtc(date, 1440);
 
-  const [court, pool] = await Promise.all([
-    prisma.amenity.findFirst({ where: { type: "COURT", isActive: true } }),
+  const [courtList, pool] = await Promise.all([
+    prisma.amenity.findMany({ where: { type: "COURT", isActive: true }, orderBy: { name: "asc" } }),
     prisma.amenity.findFirst({ where: { type: "POOL", isActive: true }, include: { poolSessions: { where: { isActive: true }, orderBy: { startMinute: "asc" } } } }),
   ]);
 
-  const courtBookings = court
-    ? (await prisma.booking.findMany({
-        where: { amenityId: court.id, status: { in: SHOWN }, startAt: { lt: dayEnd }, endAt: { gt: dayStart } },
-        orderBy: { startAt: "asc" }, select: bookingSelect,
-      })).map(toDayBooking)
+  const allCourtBookings = courtList.length
+    ? await prisma.booking.findMany({
+        where: { amenityId: { in: courtList.map((c) => c.id) }, status: { in: SHOWN }, startAt: { lt: dayEnd }, endAt: { gt: dayStart } },
+        orderBy: { startAt: "asc" }, select: { ...bookingSelect, amenityId: true },
+      })
     : [];
 
-  const rows: CourtRow[] = [];
-  for (let m = openMinute; m < closeMinute; ) {
-    const isNight = m >= settings.lights_on_minute;
-    const b = courtBookings.find((x) => x.startMinute <= m && x.endMinute > m && x.status !== "NO_SHOW")
-      ?? courtBookings.find((x) => x.startMinute <= m && x.endMinute > m);
-    if (b) {
-      const end = Math.min(b.endMinute, closeMinute);
-      rows.push({ type: "booking", startMinute: m, endMinute: end, isNight, booking: b });
-      m = end;
-    } else {
-      rows.push({ type: "free", startMinute: m, endMinute: m + 60, isNight });
-      m += 60;
+  const courts = courtList.map((court) => {
+    const list = allCourtBookings.filter((x) => x.amenityId === court.id).map(toDayBooking);
+    const rows: CourtRow[] = [];
+    for (let m = openMinute; m < closeMinute; ) {
+      const isNight = m >= settings.lights_on_minute;
+      const b = list.find((x) => x.startMinute <= m && x.endMinute > m && x.status !== "NO_SHOW")
+        ?? list.find((x) => x.startMinute <= m && x.endMinute > m);
+      if (b) {
+        const end = Math.min(b.endMinute, closeMinute);
+        rows.push({ type: "booking", startMinute: m, endMinute: end, isNight, booking: b });
+        m = end;
+      } else {
+        rows.push({ type: "free", startMinute: m, endMinute: m + 60, isNight });
+        m += 60;
+      }
     }
-  }
+    return { id: court.id, name: court.name, rows, bookings: list };
+  });
+  const courtBookings = courts.flatMap((c) => c.bookings);
 
   const sessions = pool
     ? await Promise.all(
@@ -118,7 +123,7 @@ export async function dayView(date: string) {
 
   const all = [...courtBookings, ...sessions.flatMap((s) => s.bookings)].filter((b) => b.kind === "BOOKING");
   const counted = all.filter((b) => ["CONFIRMED", "CHECKED_IN", "COMPLETED"].includes(b.status));
-  const openHours = (closeMinute - openMinute) / 60;
+  const openHours = ((closeMinute - openMinute) / 60) * Math.max(1, courts.length);
   const blockedHours = courtBookings.filter((b) => b.kind === "BLOCK").reduce((s, b) => s + (b.endMinute - b.startMinute) / 60, 0);
   const bookedHours = courtBookings
     .filter((b) => b.kind === "BOOKING" && ["CONFIRMED", "CHECKED_IN", "COMPLETED"].includes(b.status))
@@ -126,7 +131,7 @@ export async function dayView(date: string) {
 
   return {
     date, openMinute, closeMinute, lightsOnMinute: settings.lights_on_minute,
-    courtId: court?.id ?? null, rows, sessions,
+    courts, sessions,
     totals: {
       bookings: counted.length,
       expectedCentavos: counted.reduce((s, b) => s + b.totalCentavos, 0),
@@ -159,30 +164,32 @@ export async function weekView(start: string) {
   const days = Array.from({ length: 7 }, (_, i) => addDays(start, i));
   const rangeStart = manilaToUtc(days[0], 0);
   const rangeEnd = manilaToUtc(days[6], 1440);
-  const [court, pool] = await Promise.all([
-    prisma.amenity.findFirst({ where: { type: "COURT", isActive: true } }),
+  const [courtList, pool] = await Promise.all([
+    prisma.amenity.findMany({ where: { type: "COURT", isActive: true }, orderBy: { name: "asc" } }),
     prisma.amenity.findFirst({ where: { type: "POOL", isActive: true }, include: { poolSessions: { where: { isActive: true }, orderBy: { startMinute: "asc" } } } }),
   ]);
-  const bookings = court
+  const bookings = courtList.length
     ? await prisma.booking.findMany({
-        where: { amenityId: court.id, status: { in: SHOWN }, startAt: { lt: rangeEnd }, endAt: { gt: rangeStart } },
-        select: { id: true, kind: true, status: true, customerName: true, notes: true, startAt: true, endAt: true },
+        where: { amenityId: { in: courtList.map((c) => c.id) }, status: { in: SHOWN }, startAt: { lt: rangeEnd }, endAt: { gt: rangeStart } },
+        select: { id: true, amenityId: true, kind: true, status: true, customerName: true, notes: true, startAt: true, endAt: true },
       })
     : [];
   const hours: number[] = [];
   for (let m = openMinute; m < closeMinute; m += 60) hours.push(m);
 
-  const grid = hours.map((m) => ({
-    minute: m,
-    label: formatMinute(m),
-    isNight: m >= settings.lights_on_minute,
-    cells: days.map((d) => {
-      const s = manilaToUtc(d, m);
-      const e = manilaToUtc(d, m + 60);
-      const b = bookings.find((x) => x.startAt < e && x.endAt > s && x.status !== "NO_SHOW");
-      return b ? { id: b.id, kind: b.kind, status: b.status, label: b.kind === "BLOCK" ? b.notes ?? "Closed" : b.customerName ?? "" } : null;
-    }),
-  }));
+  const gridFor = (courtId: string) =>
+    hours.map((m) => ({
+      minute: m,
+      label: formatMinute(m),
+      isNight: m >= settings.lights_on_minute,
+      cells: days.map((d) => {
+        const s = manilaToUtc(d, m);
+        const e = manilaToUtc(d, m + 60);
+        const b = bookings.find((x) => x.amenityId === courtId && x.startAt < e && x.endAt > s && x.status !== "NO_SHOW");
+        return b ? { id: b.id, kind: b.kind, status: b.status, label: b.kind === "BLOCK" ? b.notes ?? "Closed" : b.customerName ?? "" } : null;
+      }),
+    }));
+  const courtGrids = courtList.map((c) => ({ id: c.id, name: c.name, grid: gridFor(c.id) }));
 
   const inventory = pool
     ? await prisma.poolSessionInventory.findMany({
@@ -197,7 +204,7 @@ export async function weekView(start: string) {
     }),
   }));
 
-  return { days, dows: days.map(dayOfWeek), grid, poolRows };
+  return { days, dows: days.map(dayOfWeek), courtGrids, poolRows };
 }
 
 export function bookingDetail(id: string) {
@@ -225,7 +232,7 @@ export async function reportData(from: string, to: string) {
   const start = manilaToUtc(from, 0);
   const end = manilaToUtc(to, 1440);
 
-  const [bookings, payments] = await Promise.all([
+  const [bookings, payments, courtCount] = await Promise.all([
     prisma.booking.findMany({
       where: { startAt: { gte: start, lt: end }, status: { notIn: ["HOLD", "EXPIRED", "REJECTED", "PENDING_VERIFICATION"] } },
       include: { amenity: { select: { type: true } }, lineItems: { select: { description: true, amountCentavos: true } } },
@@ -234,6 +241,7 @@ export async function reportData(from: string, to: string) {
       where: { status: "PAID", paidAt: { gte: start, lt: end } },
       include: { booking: { include: { amenity: { select: { type: true } } } } },
     }),
+    prisma.amenity.count({ where: { type: "COURT", isActive: true } }),
   ]);
 
   return buildReport({
@@ -241,6 +249,7 @@ export async function reportData(from: string, to: string) {
     openMinute: settings.operating_hours.openMinute,
     closeMinute: settings.operating_hours.closeMinute,
     lightsOnMinute: settings.lights_on_minute,
+    courtCount,
     bookings: bookings.map<ReportBooking>((b) => ({
       amenityType: b.amenity.type, kind: b.kind, status: b.status, source: b.source, startAt: b.startAt, endAt: b.endAt,
       totalCentavos: b.totalCentavos, adults: b.adults, kids: b.kids, lineItems: b.lineItems,

@@ -13,46 +13,84 @@ import type { SessionUser } from "./auth";
 export class ScoreError extends Error {}
 type Tx = Prisma.TransactionClient;
 
-const TOKEN_KEY = "referee_token";
+/** Before there were two courts, the single referee link was stored under this key (it now belongs to the first court). */
+const LEGACY_TOKEN_KEY = "referee_token";
+const tokenKey = (courtId: string) => `referee_token:${courtId}`;
 const HISTORY_LIMIT = 200;
 
-// ---------------------------------------------------------------- referee link
+const firstCourtId = async () =>
+  (await prisma.amenity.findFirst({ where: { type: "COURT", isActive: true }, orderBy: { name: "asc" }, select: { id: true } }))?.id ?? null;
 
-export async function getRefereeToken(): Promise<string> {
-  const row = await prisma.setting.findUnique({ where: { key: TOKEN_KEY } });
+// ---------------------------------------------------------------- referee links (one per court)
+
+export async function getRefereeToken(courtId: string): Promise<string> {
+  const key = tokenKey(courtId);
+  const row = await prisma.setting.findUnique({ where: { key } });
   if (typeof row?.value === "string" && row.value.length >= 16) return row.value;
-  const token = randomBytes(12).toString("base64url");
-  await prisma.setting.upsert({ where: { key: TOKEN_KEY }, create: { key: TOKEN_KEY, value: token }, update: {} });
-  const saved = await prisma.setting.findUniqueOrThrow({ where: { key: TOKEN_KEY } });
+  // The first court keeps the link (and printed QR) it had before Court 2 was added.
+  let token = randomBytes(12).toString("base64url");
+  if (courtId === (await firstCourtId())) {
+    const legacy = await prisma.setting.findUnique({ where: { key: LEGACY_TOKEN_KEY } });
+    if (typeof legacy?.value === "string" && legacy.value.length >= 16) token = legacy.value;
+  }
+  await prisma.setting.upsert({ where: { key }, create: { key, value: token }, update: {} });
+  const saved = await prisma.setting.findUniqueOrThrow({ where: { key } });
   return saved.value as string;
 }
 
-/** Makes a new referee link; the old one stops working. */
-export async function newRefereeToken(user: SessionUser) {
+/** Makes a new referee link for one court; that court's old link stops working. */
+export async function newRefereeToken(courtId: string, user: SessionUser) {
+  const key = tokenKey(courtId);
   const token = randomBytes(12).toString("base64url");
+  const isFirst = courtId === (await firstCourtId());
   await prisma.$transaction([
-    prisma.setting.upsert({ where: { key: TOKEN_KEY }, create: { key: TOKEN_KEY, value: token }, update: { value: token } }),
-    prisma.auditLog.create({ data: { action: "REFEREE_LINK_RESET", entity: "setting", entityId: TOKEN_KEY, userId: user.id } }),
+    prisma.setting.upsert({ where: { key }, create: { key, value: token }, update: { value: token } }),
+    // For the first court, the old shared link must stop working too.
+    ...(isFirst ? [prisma.setting.deleteMany({ where: { key: LEGACY_TOKEN_KEY } })] : []),
+    prisma.auditLog.create({ data: { action: "REFEREE_LINK_RESET", entity: "setting", entityId: key, userId: user.id } }),
   ]);
   return token;
 }
 
-export async function isValidRefereeToken(token: string): Promise<boolean> {
-  const real = await getRefereeToken();
-  const a = Buffer.from(token ?? "");
-  const b = Buffer.from(real);
-  return a.length === b.length && timingSafeEqual(a, b);
+const same = (a: string, b: string) => {
+  const x = Buffer.from(a ?? "");
+  const y = Buffer.from(b ?? "");
+  return x.length === y.length && timingSafeEqual(x, y);
+};
+
+/** Which court a referee link belongs to, or null if the link isn't valid. */
+export async function refereeCourt(token: string): Promise<string | null> {
+  if (!token || token.length < 16) return null;
+  const rows = await prisma.setting.findMany({ where: { key: { startsWith: "referee_token:" } } });
+  for (const r of rows) if (typeof r.value === "string" && same(token, r.value)) return r.key.slice("referee_token:".length);
+  // Old single link (before per-court links were created) = first court.
+  const legacy = await prisma.setting.findUnique({ where: { key: LEGACY_TOKEN_KEY } });
+  if (typeof legacy?.value === "string" && same(token, legacy.value)) {
+    const first = await firstCourtId();
+    if (first && !rows.some((r) => r.key === tokenKey(first))) return first;
+  }
+  return null;
 }
 
-async function requireReferee(token: string) {
-  if (!(await isValidRefereeToken(token))) throw new ScoreError("This referee link is no longer valid. Ask the staff for the new one.");
+export async function isValidRefereeToken(token: string): Promise<boolean> {
+  return (await refereeCourt(token)) !== null;
+}
+
+async function requireReferee(token: string): Promise<string> {
+  const courtId = await refereeCourt(token);
+  if (!courtId) throw new ScoreError("This referee link is no longer valid. Ask the staff for the new one.");
+  return courtId;
 }
 
 // ---------------------------------------------------------------- reading
 
 const historyOf = (m: Match) => (Array.isArray(m.history) ? (m.history as unknown as ScoreState[]) : []);
 
-export const liveMatch = () => prisma.match.findFirst({ where: { status: "LIVE" } });
+/** The match being scored on a court right now (or on any court, if no court is given). */
+export const liveMatch = (courtId?: string | null) =>
+  prisma.match.findFirst({ where: { status: "LIVE", ...(courtId ? { amenityId: courtId } : {}) }, orderBy: { startedAt: "asc" } });
+
+export const liveMatches = () => prisma.match.findMany({ where: { status: "LIVE" }, include: { amenity: { select: { name: true } } } });
 
 export const stateOf = (m: Match): ScoreState => ({
   scoreA: m.scoreA, scoreB: m.scoreB, serving: m.serving as Team, server: m.server as 1 | 2,
@@ -91,8 +129,12 @@ export async function periodStandings(from: Date, to: Date) {
   return { rows: standings(matches.map(toFinished)), matches: matches.length };
 }
 
-export const recentMatches = (take = 20) =>
-  prisma.match.findMany({ where: { status: "FINISHED" }, orderBy: { finishedAt: "desc" }, take });
+export const recentMatches = (take = 20, courtId?: string | null) =>
+  prisma.match.findMany({
+    where: { status: "FINISHED", ...(courtId ? { amenityId: courtId } : {}) },
+    orderBy: { finishedAt: "desc" }, take,
+    include: { amenity: { select: { name: true } } },
+  });
 
 // ---------------------------------------------------------------- starting a match
 
@@ -104,13 +146,13 @@ function checkTarget(target: number) {
 
 /** Quick match (court bookings, or any time): names are typed by the referee. */
 export async function startQuickMatch(token: string, teamA: string[], teamB: string[], target: number) {
-  await requireReferee(token);
+  const courtId = await requireReferee(token);
   checkTarget(target);
   const a = cleanNames(teamA);
   const b = cleanNames(teamB);
   const names = [...a, ...b];
   if (names.some((n) => !n)) throw new ScoreError("Enter all 4 player names (or nicknames).");
-  return createMatch({ teamA: a, teamB: b, target });
+  return createMatch({ amenityId: courtId, teamA: a, teamB: b, target });
 }
 
 /**
@@ -118,8 +160,10 @@ export async function startQuickMatch(token: string, teamA: string[], teamB: str
  * on-court order: 0 = 1&2 vs 3&4, 1 = 1&3 vs 2&4, 2 = 1&4 vs 2&3.
  */
 export async function startOpenPlayMatch(token: string, openPlaySessionId: string, pairing: number, target: number) {
-  await requireReferee(token);
+  const courtId = await requireReferee(token);
   checkTarget(target);
+  const session = await prisma.openPlaySession.findUnique({ where: { id: openPlaySessionId }, select: { amenityId: true } });
+  if (!session || session.amenityId !== courtId) throw new ScoreError("This open play session is on another court. Use that court's referee link.");
   const onCourt = await prisma.openPlayPlayer.findMany({
     where: { sessionId: openPlaySessionId, state: "PLAYING" }, orderBy: { queuePos: "asc" },
   });
@@ -128,14 +172,14 @@ export async function startOpenPlayMatch(token: string, openPlaySessionId: strin
   const pairs = [[[p1, p2], [p3, p4]], [[p1, p3], [p2, p4]], [[p1, p4], [p2, p3]]][pairing] ?? [[p1, p2], [p3, p4]];
   const [A, B] = pairs;
   return createMatch({
-    openPlaySessionId, target,
+    amenityId: courtId, openPlaySessionId, target,
     teamA: A.map((p) => p.name), teamB: B.map((p) => p.name),
     teamAPlayerIds: A.map((p) => p.id), teamBPlayerIds: B.map((p) => p.id),
   });
 }
 
 async function createMatch(data: {
-  teamA: string[]; teamB: string[]; target: number;
+  amenityId: string; teamA: string[]; teamB: string[]; target: number;
   openPlaySessionId?: string; teamAPlayerIds?: string[]; teamBPlayerIds?: string[];
 }) {
   const s = newGame("A");
@@ -145,27 +189,29 @@ async function createMatch(data: {
     });
   } catch (e) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002")
-      throw new ScoreError("A match is already being scored. Finish or cancel it first.");
+      throw new ScoreError("A match is already being scored on this court. Finish or cancel it first.");
     throw e;
   }
 }
 
 // ---------------------------------------------------------------- scoring
 
-async function lockMatch(tx: Tx, matchId: string) {
+async function lockMatch(tx: Tx, matchId: string, courtId?: string) {
   await tx.$queryRaw`SELECT id FROM "matches" WHERE id = ${matchId}::uuid FOR UPDATE`;
   const m = await tx.match.findUnique({ where: { id: matchId } });
   if (!m) throw new ScoreError("Match not found.");
+  // A referee link only works for matches on its own court.
+  if (courtId && m.amenityId !== courtId) throw new ScoreError("This match is on another court.");
   return m;
 }
 
 
 /** The referee taps which team won the rally. */
 export async function recordRally(token: string, matchId: string, wonBy: Team) {
-  await requireReferee(token);
+  const courtId = await requireReferee(token);
   if (wonBy !== "A" && wonBy !== "B") throw new ScoreError("Unknown team.");
   return prisma.$transaction(async (tx) => {
-    const m = await lockMatch(tx, matchId);
+    const m = await lockMatch(tx, matchId, courtId);
     if (m.status !== "LIVE") throw new ScoreError("This match is over.");
     const before = stateOf(m);
     if (before.winner) throw new ScoreError("Game over. Confirm the result, or Undo the last point.");
@@ -183,9 +229,9 @@ export async function recordRally(token: string, matchId: string, wonBy: Team) {
 
 /** Takes back the last tap. */
 export async function undoRally(token: string, matchId: string) {
-  await requireReferee(token);
+  const courtId = await requireReferee(token);
   return prisma.$transaction(async (tx) => {
-    const m = await lockMatch(tx, matchId);
+    const m = await lockMatch(tx, matchId, courtId);
     if (m.status !== "LIVE") throw new ScoreError("This match is over.");
     const history = historyOf(m);
     const prev = history.pop();
@@ -205,9 +251,9 @@ export async function undoRally(token: string, matchId: string) {
  * (all 4 to the back of the line) and puts the next 4 on court.
  */
 export async function confirmResult(token: string, matchId: string, nextFour: boolean) {
-  await requireReferee(token);
+  const courtId = await requireReferee(token);
   const m = await prisma.$transaction(async (tx) => {
-    const m = await lockMatch(tx, matchId);
+    const m = await lockMatch(tx, matchId, courtId);
     if (m.status !== "LIVE") throw new ScoreError("This result is already saved.");
     if (!m.winner) throw new ScoreError("The game isn't over yet.");
     return tx.match.update({ where: { id: m.id }, data: { status: "FINISHED", finishedAt: new Date() } });
@@ -236,9 +282,9 @@ async function sameFourOnCourt(m: Match) {
 
 /** Cancels a match without a result (wrong players, rain, etc.). */
 export async function abandonMatch(token: string, matchId: string) {
-  await requireReferee(token);
+  const courtId = await requireReferee(token);
   await prisma.$transaction(async (tx) => {
-    const m = await lockMatch(tx, matchId);
+    const m = await lockMatch(tx, matchId, courtId);
     if (m.status !== "LIVE") throw new ScoreError("This match is already over.");
     await tx.match.update({ where: { id: m.id }, data: { status: "ABANDONED", finishedAt: new Date() } });
   });

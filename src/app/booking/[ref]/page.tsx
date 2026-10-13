@@ -130,7 +130,7 @@ export default async function BookingPage({
         <p className="text-sm text-muted">Reference code</p>
         <p className="font-display text-3xl font-extrabold tracking-wide">{b.referenceCode}</p>
 
-        <h2 className="mt-5 font-display text-xl font-semibold">{isPool ? "Swimming pool" : "Pickleball court"}</h2>
+        <h2 className="mt-5 font-display text-xl font-semibold">{isPool ? "Swimming pool" : b.amenity.name}</h2>
         <p>{dateLabel}</p>
         <p className="text-muted">
           {formatMinute(start.minuteOfDay)} to {formatMinute(end.minuteOfDay === 0 ? 1440 : end.minuteOfDay)}

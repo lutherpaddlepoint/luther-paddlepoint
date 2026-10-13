@@ -70,8 +70,19 @@ async function conflictMessage(amenityId: string, startAt: Date, endAt: Date, ex
 // ---------------------------------------------------------------------------
 // Walk-ins and phone bookings made by staff
 // ---------------------------------------------------------------------------
+/** An active court by id, or the first court (by name) when no id is given. */
+export async function findCourt(courtId?: string | null) {
+  if (courtId && !/^[0-9a-f-]{36}$/i.test(courtId)) throw new AdminError("That court is not available.");
+  const court = courtId
+    ? await prisma.amenity.findFirst({ where: { id: courtId, type: "COURT", isActive: true } })
+    : await prisma.amenity.findFirst({ where: { type: "COURT", isActive: true }, orderBy: { name: "asc" } });
+  if (!court) throw new AdminError(courtId ? "That court is not available." : "No active court.");
+  return court;
+}
+
 export type WalkInInput = {
   amenity: "COURT" | "POOL";
+  courtId?: string;
   date: string;
   startMinute?: number;
   endMinute?: number;
@@ -111,8 +122,7 @@ export async function createWalkIn(input: WalkInInput, user: SessionUser) {
 
   try {
     if (input.amenity === "COURT") {
-      const court = await prisma.amenity.findFirst({ where: { type: "COURT", isActive: true } });
-      if (!court) throw new AdminError("No active court.");
+      const court = await findCourt(input.courtId);
       const startMinute = input.startMinute ?? -1;
       const endMinute = input.endMinute ?? -1;
       const quote = quoteCourt({
@@ -347,15 +357,16 @@ export async function rescheduleBooking(bookingId: string, input: RescheduleInpu
 // ---------------------------------------------------------------------------
 // Owner: blocks and pool closures
 // ---------------------------------------------------------------------------
-export async function createCourtBlock(date: string, startMinute: number, endMinute: number, reason: string, user: SessionUser) {
+export async function createCourtBlock(
+  date: string, startMinute: number, endMinute: number, reason: string, user: SessionUser, courtId?: string | null,
+) {
   const settings = await getSettings();
   const { openMinute, closeMinute } = settings.operating_hours;
   if (reason.trim().length < 2) throw new AdminError("Give a reason (e.g. maintenance, tournament).");
   if (startMinute % 60 || endMinute % 60) throw new AdminError("Blocks start and end on the hour.");
   if (endMinute <= startMinute) throw new AdminError("End time must be after start time.");
   if (startMinute < openMinute || endMinute > closeMinute) throw new AdminError("Block must be within opening hours.");
-  const court = await prisma.amenity.findFirst({ where: { type: "COURT", isActive: true } });
-  if (!court) throw new AdminError("No active court.");
+  const court = await findCourt(courtId);
   const startAt = manilaToUtc(date, startMinute);
   const endAt = manilaToUtc(date, endMinute);
   await expireStaleHolds();
@@ -369,7 +380,7 @@ export async function createCourtBlock(date: string, startMinute: number, endMin
     await prisma.$transaction((tx) => audit(tx, user, "BLOCK_CREATED", b.id, { reason: reason.trim() }));
     return b;
   } catch (e) {
-    if (isOverlapError(e)) throw new AdminError(`${await conflictMessage(court.id, startAt, endAt)} Move or cancel those first.`);
+    if (isOverlapError(e)) throw new AdminError(`${court.name}: ${await conflictMessage(court.id, startAt, endAt)} Move or cancel those first.`);
     throw e;
   }
 }

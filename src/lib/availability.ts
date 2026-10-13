@@ -15,9 +15,14 @@ export type Availability = {
   minHours: number;
   openMinute: number;
   closeMinute: number;
-  court: { id: string; name: string; rules: RateRuleInput[]; slots: CourtSlot[] } | null;
+  /** All active courts, in name order (Court 1, Court 2, ...). */
+  courts: CourtView[];
+  /** The first court (kept for older screens). */
+  court: CourtView | null;
   pool: { id: string; name: string; rules: RateRuleInput[]; sessions: PoolSessionView[] } | null;
 };
+
+export type CourtView = { id: string; name: string; rules: RateRuleInput[]; slots: CourtSlot[] };
 
 export async function expireStaleHolds() {
   await prisma.$queryRaw`SELECT expire_stale_holds()`;
@@ -44,8 +49,8 @@ export async function getAvailability(date: string, now = new Date()): Promise<A
   const dayStart = manilaToUtc(date, 0);
   const dayEnd = manilaToUtc(date, 24 * 60);
 
-  const [court, pool] = await Promise.all([
-    prisma.amenity.findFirst({
+  const [courts, pool] = await Promise.all([
+    prisma.amenity.findMany({
       where: { type: "COURT", isActive: true },
       orderBy: { name: "asc" },
       include: { rateRules: { where: { isActive: true } } },
@@ -59,27 +64,29 @@ export async function getAvailability(date: string, now = new Date()): Promise<A
     }),
   ]);
 
-  let courtView: Availability["court"] = null;
-  if (court) {
-    // Only start/end/kind are read — customer details never leave the server here.
-    const busy = await prisma.booking.findMany({
-      where: {
-        amenityId: court.id,
-        exclusive: true,
-        status: { in: [...ACTIVE_STATUSES] },
-        startAt: { lt: dayEnd },
-        endAt: { gt: dayStart },
-      },
-      select: { startAt: true, endAt: true, kind: true },
-    });
+  // Only start/end/kind are read — customer details never leave the server here.
+  const busyAll = courts.length
+    ? await prisma.booking.findMany({
+        where: {
+          amenityId: { in: courts.map((c) => c.id) },
+          exclusive: true,
+          status: { in: [...ACTIVE_STATUSES] },
+          startAt: { lt: dayEnd },
+          endAt: { gt: dayStart },
+        },
+        select: { amenityId: true, startAt: true, endAt: true, kind: true },
+      })
+    : [];
+  const courtViews: CourtView[] = courts.map((court) => {
     const rules = court.rateRules.map(toRuleInput);
-    courtView = {
+    const busy = busyAll.filter((b) => b.amenityId === court.id).map(({ startAt, endAt, kind }) => ({ startAt, endAt, kind }));
+    return {
       id: court.id,
       name: court.name,
       rules,
       slots: buildCourtSlots({ date, now, busy, rules, openMinute, closeMinute, lightsOnMinute: settings.lights_on_minute }),
     };
-  }
+  });
 
   let poolView: Availability["pool"] = null;
   if (pool) {
@@ -106,7 +113,8 @@ export async function getAvailability(date: string, now = new Date()): Promise<A
     lightsOnMinute: settings.lights_on_minute,
     minHours: settings.court_min_hours,
     openMinute, closeMinute,
-    court: courtView,
+    courts: courtViews,
+    court: courtViews[0] ?? null,
     pool: poolView,
   };
 }

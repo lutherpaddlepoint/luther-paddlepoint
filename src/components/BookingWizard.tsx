@@ -7,6 +7,7 @@ import type { CourtSlot, PoolSessionView } from "@/lib/availability-core";
 import { quoteCourt, quotePool, formatPeso, type PriceQuote } from "@/lib/pricing";
 import { toggleSlot, rangeStillAvailable, type Range } from "@/lib/selection";
 import { addDays, formatMinute, manilaToUtc, todayInManila } from "@/lib/time";
+import { priceRange, shortCourtName } from "@/lib/courts-core";
 
 type Amenity = "COURT" | "POOL";
 type Step = "choose" | "details";
@@ -27,6 +28,7 @@ export default function BookingWizard() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
+  const [courtId, setCourtId] = useState<string | null>(null);
   const [range, setRange] = useState<Range>(null);
   const [players, setPlayers] = useState(4);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -56,11 +58,14 @@ export default function BookingWizard() {
     return () => ctrl.abort();
   }, [date, load]);
 
+  // The court the customer picked (the first court until they choose).
+  const selCourt = data ? (data.courts?.find((c) => c.id === courtId) ?? data.courts?.[0] ?? data.court) : null;
+
   // If a refresh shows the chosen time is no longer free, clear it and say why.
   useEffect(() => {
     if (!data) return;
-    if (range && data.court) {
-      const free = (m: number) => data.court!.slots.some((s) => s.startMinute === m && s.status === "available");
+    if (range && selCourt) {
+      const free = (m: number) => selCourt.slots.some((s) => s.startMinute === m && s.status === "available");
       if (!rangeStillAvailable(range, free)) {
         setRange(null);
         setNotice("Part of the time you picked was just booked. Please choose again.");
@@ -84,6 +89,13 @@ export default function BookingWizard() {
     setNotice(null);
   };
 
+  const pickCourt = (id: string) => {
+    if (id === courtId) return;
+    setCourtId(id);
+    setRange(null);
+    setNotice(null);
+  };
+
   const pickAmenity = (a: Amenity) => {
     setAmenity(a);
     setNotice(null);
@@ -92,9 +104,9 @@ export default function BookingWizard() {
   const quote: PriceQuote | null = useMemo(() => {
     if (!data) return null;
     try {
-      if (amenity === "COURT" && range && data.court)
+      if (amenity === "COURT" && range && selCourt)
         return quoteCourt({
-          date, startMinute: range.start, endMinute: range.end, rules: data.court.rules,
+          date, startMinute: range.start, endMinute: range.end, rules: selCourt.rules,
           openMinute: data.openMinute, closeMinute: data.closeMinute, feePercent: data.feePercent, minHours: data.minHours,
         });
       if (amenity === "POOL" && sessionId && data.pool) {
@@ -106,7 +118,7 @@ export default function BookingWizard() {
       return null;
     }
     return null;
-  }, [data, amenity, range, sessionId, adults, kids, date]);
+  }, [data, selCourt, amenity, range, sessionId, adults, kids, date]);
 
   const selectedSession = data?.pool?.sessions.find((s) => s.id === sessionId) ?? null;
   const lastDate = data?.lastDate ?? addDays(today, 29);
@@ -116,9 +128,10 @@ export default function BookingWizard() {
     return out;
   }, [today, lastDate]);
 
+  const multiCourt = (data?.courts?.length ?? 0) > 1;
   const summaryLine =
     amenity === "COURT" && range
-      ? `${formatMinute(range.start)} to ${formatMinute(range.end)}, ${players} player${players === 1 ? "" : "s"}`
+      ? `${multiCourt && selCourt ? `${shortCourtName(selCourt.name)}, ` : ""}${formatMinute(range.start)} to ${formatMinute(range.end)}, ${players} player${players === 1 ? "" : "s"}`
       : selectedSession
         ? `${selectedSession.name}, ${formatMinute(selectedSession.startMinute)} to ${formatMinute(selectedSession.endMinute)}`
         : "";
@@ -132,8 +145,8 @@ export default function BookingWizard() {
         quote={quote}
         guestsLine={amenity === "POOL" ? `${adults} adult${adults === 1 ? "" : "s"}${kids ? `, ${kids} kid${kids === 1 ? "" : "s"}` : ""}` : ""}
         payload={
-          amenity === "COURT" && range && data.court
-            ? { amenity, amenityId: data.court.id, date, startMinute: range.start, endMinute: range.end, players }
+          amenity === "COURT" && range && selCourt
+            ? { amenity, amenityId: selCourt.id, date, startMinute: range.start, endMinute: range.end, players }
             : { amenity, sessionId, date, adults, kids }
         }
         onBack={() => setStep("choose")}
@@ -147,9 +160,11 @@ export default function BookingWizard() {
     );
   }
 
-  const court = data?.court;
+  const court = selCourt;
+  const allCourts = data?.courts ?? (data?.court ? [data.court] : []);
   const pool = data?.pool;
-  const courtRates = court ? Array.from(new Set(court.rules.map((r) => r.priceCentavos))).sort((a, b) => a - b) : [];
+  const allRates = priceRange(allCourts.flatMap((c) => c.rules.map((r) => r.priceCentavos)));
+  const courtRates = allRates ? Array.from(new Set(allRates)) : [];
   const poolAdult = pool?.rules.find((r) => r.guestType === "ADULT")?.priceCentavos;
   const poolKid = pool?.rules.find((r) => r.guestType === "KID")?.priceCentavos;
 
@@ -160,7 +175,7 @@ export default function BookingWizard() {
         <AmenityButton
           active={amenity === "COURT"}
           onClick={() => pickAmenity("COURT")}
-          title="Pickleball court"
+          title={multiCourt ? "Pickleball courts" : "Pickleball court"}
           detail={courtRates.length ? `${courtRates.map(peso).join(" to ")} per hour` : "Per hour"}
           tone="court"
         />
@@ -172,6 +187,34 @@ export default function BookingWizard() {
           tone="pool"
         />
       </div>
+
+      {/* Which court */}
+      {amenity === "COURT" && multiCourt && (
+        <div className="mt-4" role="radiogroup" aria-label="Choose a court">
+          <p className="text-sm font-bold text-muted">Choose a court</p>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            {allCourts.map((c) => {
+              const active = c.id === selCourt?.id;
+              const r = priceRange(c.rules.map((x) => x.priceCentavos));
+              const free = c.slots.filter((x) => x.status === "available").length;
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => pickCourt(c.id)}
+                  className={`rounded-xl border-2 px-4 py-3 text-left ${active ? "border-court bg-court/10" : "border-line bg-white"}`}
+                >
+                  <span className="block font-display text-lg font-semibold">{shortCourtName(c.name)}</span>
+                  <span className="block text-sm">{r ? (r[0] === r[1] ? `${peso(r[0])}/hour` : `${peso(r[0])} to ${peso(r[1])}/hour`) : "Per hour"}</span>
+                  <span className="block text-xs text-muted">{free ? `${free} open hour${free === 1 ? "" : "s"} this day` : "Fully booked this day"}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* When */}
       <h2 className="mt-8 font-display text-xl font-semibold">
