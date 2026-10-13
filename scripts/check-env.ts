@@ -20,7 +20,10 @@ need("CRON_SECRET", (v) => v.length >= 16, "At least 16 random characters.");
 need("SUPABASE_URL", (v) => /^https:\/\/.+\.supabase\.co$/.test(v), "Like https://abcd.supabase.co");
 need("SUPABASE_SERVICE_ROLE_KEY", (v) => v.length > 40, "Supabase → Project Settings → API → service_role key.");
 
-if (!env.SMTP_USER || !env.SMTP_PASS) warnings.push("Email is not set up (SMTP_USER / SMTP_PASS): customers won't get confirmations or QR codes.");
+if (env.MAIL_RELAY_URL && env.MAIL_RELAY_SECRET) {
+  if (!/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec$/.test(env.MAIL_RELAY_URL))
+    warnings.push("MAIL_RELAY_URL should look like https://script.google.com/macros/s/.../exec");
+} else if (!env.SMTP_USER || !env.SMTP_PASS) warnings.push("Email is not set up (SMTP_USER / SMTP_PASS): customers won't get confirmations or QR codes.");
 else if (env.SMTP_PASS.replace(/\s/g, "").length !== 16 && env.SMTP_HOST === "smtp.gmail.com")
   warnings.push("SMTP_PASS should be the 16-character Gmail app password, not your normal Gmail password.");
 if (!env.SEMAPHORE_API_KEY) warnings.push("SMS is off (no SEMAPHORE_API_KEY). That's fine; emails still go out.");

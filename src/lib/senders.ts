@@ -6,7 +6,32 @@ export class NotConfigured extends Error {}
 
 let transport: Transporter | null = null;
 
+/**
+ * Sends through a Google Apps Script web app (scripts/gmail-relay.gs) over HTTPS.
+ * Used on hosts that block outgoing SMTP, such as Render's free plan.
+ */
+async function sendViaRelay(url: string, secret: string, to: string, msg: { subject: string; text: string; html: string }, qrPng?: Buffer) {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" }, // Apps Script reads the raw body
+    body: JSON.stringify({ secret, to, subject: msg.subject, text: msg.text, html: msg.html, qrBase64: qrPng?.toString("base64") ?? null }),
+    redirect: "follow",
+    signal: AbortSignal.timeout(25_000),
+  });
+  const body = await res.text();
+  let parsed: { ok?: boolean; error?: string } | null = null;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    // Google returned an HTML page (wrong URL, or the script isn't deployed for "Anyone")
+  }
+  if (!res.ok || !parsed) throw new Error(`Email relay failed (${res.status}). Check MAIL_RELAY_URL and that the script is deployed with access "Anyone".`);
+  if (!parsed.ok) throw new Error(`Email relay: ${parsed.error ?? "unknown error"}`);
+}
+
 export async function sendEmail(to: string, msg: { subject: string; text: string; html: string }, qrPng?: Buffer) {
+  const { MAIL_RELAY_URL, MAIL_RELAY_SECRET } = process.env;
+  if (MAIL_RELAY_URL && MAIL_RELAY_SECRET) return sendViaRelay(MAIL_RELAY_URL, MAIL_RELAY_SECRET, to, msg, qrPng);
   const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, EMAIL_FROM } = process.env;
   if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) throw new NotConfigured("Email is not set up (SMTP_* settings).");
   transport ??= nodemailer.createTransport({
