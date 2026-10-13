@@ -31,7 +31,7 @@ export default function AdminNav({ isOwner, pending, attention }: { isOwner: boo
               href={i.href}
               aria-current={active ? "page" : undefined}
               className={`flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-bold ${
-                active ? "bg-white text-court" : "text-white/85 hover:bg-white/10"
+                active ? "bg-white text-brand" : "text-white/85 hover:bg-white/10"
               }`}
             >
               {i.label}

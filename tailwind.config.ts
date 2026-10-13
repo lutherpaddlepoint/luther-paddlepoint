@@ -13,6 +13,7 @@ export default {
         pool: "#1C7F99", // pool blue
         ball: "#E6E23C", // pickleball yellow: selection only
         dusk: "#2C3170", // night rate, after the lights come on
+        brand: "#F80789", // Luther logo pink
       },
       fontFamily: {
         display: ["var(--font-display)", "system-ui", "sans-serif"],
