@@ -1,4 +1,5 @@
 // Message wording for emails and SMS. Pure functions (no sending), so they're easy to test and edit.
+import { shortCourtName } from "./courts-core";
 
 export type MessageEvent =
   | "PROOF_RECEIVED" | "BOOKING_CONFIRMED" | "PAYMENT_REJECTED" | "REMINDER" | "CANCELLED" | "RESCHEDULED"
@@ -139,18 +140,33 @@ export function renderEmail(event: MessageEvent, v: MessageView): Email {
   }
 }
 
-/** SMS text for customer events (null = no SMS for this event). Kept to one 160-character message. */
+/** Longest SMS we send: 2 parts (a long text is split into 153-character parts). */
+export const SMS_MAX = 306;
+
+/**
+ * SMS text for customer events (null = no SMS for this event). Plain ASCII.
+ * Confirmations, new times and reminders end with the booking link, which opens the
+ * page with the QR code (an SMS can't carry a picture). With the link it is 2 SMS.
+ */
 export function renderSms(event: MessageEvent, v: MessageView): string | null {
   const name = ascii(v.facilityName).replace(/ & Pool$/, "");
   const when = `${v.shortDate} ${smsTime(v.timeLabel)}`;
   const bal = v.balanceCentavos > 0 ? ` Balance ${smsPeso(v.balanceLabel)} on-site.` : "";
-  const what = v.amenityName.toLowerCase().includes("pool") ? "Pool" : "Court";
+  const what = v.amenityName.toLowerCase().includes("pool") ? "Pool" : shortCourtName(v.amenityName);
+  const link = ` QR: ${v.bookingUrl}`;
   let msg: string | null = null;
-  if (event === "BOOKING_CONFIRMED") msg = `${name}: CONFIRMED ${v.ref}, ${what} ${when}.${bal} Show ref at counter.`;
+  let withLink = true;
+  if (event === "BOOKING_CONFIRMED") msg = `${name}: CONFIRMED ${v.ref}, ${what} ${when}.${bal} Show QR or ref at counter.`;
   else if (event === "RESCHEDULED") msg = `${name}: ${v.ref} moved to ${what} ${when}.${bal}`;
   else if (event === "REMINDER") msg = `${name}: Reminder, ${what} today ${smsTime(v.timeLabel)}, ref ${v.ref}.${bal} See you!`;
-  else if (event === "PAYMENT_REJECTED") msg = `${name}: Payment for ${v.ref} not confirmed, slot released. If you paid, contact us: ${v.contact}`;
+  else if (event === "PAYMENT_REJECTED") {
+    msg = `${name}: Payment for ${v.ref} not confirmed, slot released. If you paid, contact us: ${v.contact}`;
+    withLink = false;
+  }
   if (!msg) return null;
-  const clean = ascii(msg);
-  return clean.length <= 160 ? clean : clean.slice(0, 157) + "...";
+  const tail = withLink ? ascii(link) : "";
+  const room = (withLink ? SMS_MAX : 160) - tail.length;
+  let body = ascii(msg);
+  if (body.length > room) body = body.slice(0, Math.max(0, room - 3)) + "...";
+  return body + tail;
 }

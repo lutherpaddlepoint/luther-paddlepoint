@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { renderEmail, renderSms, esc, type MessageView, type MessageEvent } from "../src/lib/templates";
+import { renderEmail, renderSms, esc, SMS_MAX, type MessageView, type MessageEvent } from "../src/lib/templates";
 
 const v: MessageView = {
   facilityName: "Luther PaddlePoint & Pool", address: "Necesito Place, Poblacion 3, Lebak, Sultan Kudarat",
@@ -40,14 +40,28 @@ test("reminder mentions balance only when there is one", () => {
   assert.ok(!renderEmail("REMINDER", { ...v, balanceCentavos: 0 }).text.includes("bring"));
 });
 
-test("SMS: plain ASCII, one message (<=160), only for chosen events", () => {
+test("SMS: plain ASCII, at most 2 parts, only for chosen events", () => {
   for (const e of ALL) {
     const s = renderSms(e, v);
     if (s === null) continue;
-    assert.ok(s.length <= 160, `${e}: ${s.length}`);
+    assert.ok(s.length <= SMS_MAX, `${e}: ${s.length}`);
     assert.match(s, /^[\x20-\x7E]+$/, e);
   }
-  assert.equal(renderSms("BOOKING_CONFIRMED", v), "Luther PaddlePoint: CONFIRMED LPP-7K3QX, Court Oct 12 4PM-6PM. Balance P225 on-site. Show ref at counter.");
+  assert.equal(
+    renderSms("BOOKING_CONFIRMED", v),
+    "Luther PaddlePoint: CONFIRMED LPP-7K3QX, Court 1 Oct 12 4PM-6PM. Balance P225 on-site. Show QR or ref at counter. QR: https://x.vercel.app/booking/LPP-7K3QX?t=abc",
+  );
+  assert.ok(renderSms("REMINDER", v)!.endsWith("QR: https://x.vercel.app/booking/LPP-7K3QX?t=abc"));
+  assert.ok(renderSms("PAYMENT_REJECTED", v)!.length <= 160);
+  assert.ok(!renderSms("PAYMENT_REJECTED", v)!.includes("http"));
+  assert.ok(renderSms("BOOKING_CONFIRMED", { ...v, amenityName: "Swimming pool" })!.includes(", Pool Oct 12"));
   assert.equal(renderSms("PROOF_RECEIVED", v), null);
   assert.equal(renderSms("STAFF_PROOF_RECEIVED", v), null);
+});
+
+test("SMS: a long message is shortened but the link is never cut", () => {
+  const long = { ...v, facilityName: "X".repeat(400) };
+  const s = renderSms("BOOKING_CONFIRMED", long)!;
+  assert.ok(s.length <= SMS_MAX);
+  assert.ok(s.endsWith(" QR: https://x.vercel.app/booking/LPP-7K3QX?t=abc"));
 });
