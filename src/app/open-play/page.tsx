@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { currentPublicSession, openPlayBoard, sessionDate, sessionLabel, upcomingPublicSessions } from "@/lib/open-play";
+import { currentPublicSession, openPlayBoard, sessionDate, sessionEndAt, sessionLabel, sessionStartAt, upcomingPublicSessions } from "@/lib/open-play";
 import { PLAYERS_PER_GAME } from "@/lib/open-play-core";
 import { formatPeso } from "@/lib/pricing";
 import { todayInManila } from "@/lib/time";
 import AutoRefresh from "@/components/AutoRefresh";
+import TvClock from "@/components/TvClock";
 import LiveScore from "@/components/score/LiveScore";
 import Standings from "@/components/score/Standings";
 import { liveMatch, matchView, sessionStandings } from "@/lib/scoring";
@@ -66,7 +67,10 @@ export default async function OpenPlayScreen() {
           <p className="font-display text-lg font-semibold text-ball">Open play</p>
           <h1 className="font-display text-3xl font-extrabold md:text-4xl">{sessionLabel(s)}</h1>
         </div>
-        <p className="text-white/80">{peso(s.rateCentavosPerHour)}/hr · Game {s.gamesPlayed + (onCourt.length ? 1 : 0)}</p>
+        <div className="flex items-end gap-6">
+          <p className="text-white/80">{peso(s.rateCentavosPerHour)}/hr · Game {s.gamesPlayed + (onCourt.length ? 1 : 0)}</p>
+          <TvClock startsAt={sessionStartAt(s).toISOString()} endsAt={sessionEndAt(s).toISOString()} />
+        </div>
       </header>
 
       {!isToday && <p className="mt-6 text-white/80">Not started yet.</p>}

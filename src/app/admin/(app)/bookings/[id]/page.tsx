@@ -11,6 +11,8 @@ import { formatPhMobile } from "@/lib/phone";
 import ActionForm, { inputCls, labelCls } from "@/components/admin/ActionForm";
 import StatusBadge from "@/components/admin/StatusBadge";
 import HourSelect from "@/components/admin/HourSelect";
+import CourtTimerControls from "@/components/admin/CourtTimerControls";
+import { getCourtTimer } from "@/lib/court-timer";
 import {
   addNoteAction, cancelAction, checkInAction, noShowAction, recordBalanceAction,
   removeBlockAction, rescheduleAction, resolveAttentionAction,
@@ -40,6 +42,8 @@ export default async function BookingPage({ params }: { params: { id: string } }
   const sessions = isPool ? await prisma.poolSession.findMany({ where: { amenityId: b.amenityId, isActive: true }, orderBy: { startMinute: "asc" } }) : [];
   const proofLinks = await Promise.all(b.payments.map((p) => (p.proofImagePath ? signedProofUrl(p.proofImagePath, 900).catch(() => null) : null)));
   const { openMinute, closeMinute } = settings.operating_hours;
+  const canTime = !isPool && isToday && (b.status === "CONFIRMED" || b.status === "CHECKED_IN") && b.endAt > new Date();
+  const timer = canTime ? await getCourtTimer() : null;
 
   if (b.kind === "BLOCK") {
     return (
@@ -152,6 +156,7 @@ export default async function BookingPage({ params }: { params: { id: string } }
       </div>
 
       <aside className="grid content-start gap-5">
+        {canTime && <CourtTimerControls timer={timer} bookingId={b.id} />}
         {b.status === "CONFIRMED" && (
           <section className="rounded-2xl border-2 border-court bg-white p-5">
             <h2 className="font-display text-xl font-semibold">Check in</h2>

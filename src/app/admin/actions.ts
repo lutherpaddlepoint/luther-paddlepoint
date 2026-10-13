@@ -18,6 +18,7 @@ import { abandonMatchAsStaff, newRefereeToken, ScoreError } from "@/lib/scoring"
 import {
   addPlayer, cancelOpenPlay, checkOutPlayer, closeOpenPlay, createOpenPlay, finishGame, moveToBack, setResting, startNextGame,
 } from "@/lib/open-play";
+import { extendCourtTimer, startCourtTimer, stopCourtTimer } from "@/lib/court-timer";
 import { sendEmail, NotConfigured } from "@/lib/senders";
 import { toMinute } from "@/lib/time";
 import type { ActionResult } from "@/lib/action-result";
@@ -417,5 +418,31 @@ export async function abandonMatchAction(fd: FormData) {
     const user = await requireUser();
     await abandonMatchAsStaff(str(fd, "matchId"), user);
     return { ok: true, message: "Match cancelled. No result was saved." };
+  });
+}
+
+// ---------------------------------------------------------------- court countdown (TV)
+export async function startCourtTimerAction(fd: FormData) {
+  return run(async () => {
+    const user = await requireUser();
+    await startCourtTimer(str(fd, "bookingId"), user);
+    return { ok: true, message: "Countdown started on the TV screen." };
+  });
+}
+
+export async function extendCourtTimerAction(fd: FormData) {
+  return run(async () => {
+    const user = await requireUser();
+    const m = int(fd, "minutes");
+    await extendCourtTimer(m, user);
+    return { ok: true, message: `Added ${m} minutes.` };
+  });
+}
+
+export async function stopCourtTimerAction() {
+  return run(async () => {
+    const user = await requireUser();
+    await stopCourtTimer(user);
+    return { ok: true, message: "Countdown stopped." };
   });
 }

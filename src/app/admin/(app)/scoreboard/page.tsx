@@ -7,6 +7,8 @@ import { addDays, dayOfWeek, manilaToUtc, todayInManila } from "@/lib/time";
 import ActionForm from "@/components/admin/ActionForm";
 import Standings from "@/components/score/Standings";
 import AutoRefresh from "@/components/AutoRefresh";
+import CourtTimerControls from "@/components/admin/CourtTimerControls";
+import { getCourtTimer } from "@/lib/court-timer";
 import { abandonMatchAction, newRefereeLinkAction } from "@/app/admin/actions";
 
 const when = (d: Date) =>
@@ -23,8 +25,8 @@ export default async function ScoreboardAdmin({ searchParams }: { searchParams: 
   const today = todayInManila();
   const range = searchParams.range === "today" ? "today" : searchParams.range === "week" ? "week" : "month";
   const from = range === "today" ? today : range === "week" ? addDays(today, -((dayOfWeek(today) + 6) % 7)) : `${today.slice(0, 8)}01`;
-  const [token, live, board, recent] = await Promise.all([
-    getRefereeToken(), liveMatch(), periodStandings(manilaToUtc(from, 0), manilaToUtc(today, 1440)), recentMatches(15),
+  const [token, live, board, recent, timer] = await Promise.all([
+    getRefereeToken(), liveMatch(), periodStandings(manilaToUtc(from, 0), manilaToUtc(today, 1440)), recentMatches(15), getCourtTimer(),
   ]);
   const refUrl = `${siteOrigin()}/ref/${token}`;
   const qr = await qrSvg(refUrl);
@@ -42,6 +44,7 @@ export default async function ScoreboardAdmin({ searchParams }: { searchParams: 
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_20rem]">
         <div className="grid content-start gap-6">
+          <CourtTimerControls timer={timer} />
           <section className="rounded-2xl border border-line bg-white p-5">
             <h2 className="font-display text-xl font-semibold">Now on court</h2>
             {live ? (() => {
