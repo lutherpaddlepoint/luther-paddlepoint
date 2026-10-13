@@ -1,6 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   poweredByHeader: false,
+  // Enables src/instrumentation.ts (built-in scheduled jobs on Render).
+  experimental: { instrumentationHook: true },
   async headers() {
     return [
       {

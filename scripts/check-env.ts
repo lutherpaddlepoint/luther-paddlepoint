@@ -14,7 +14,7 @@ const need = (k: string, test: (v: string) => boolean, why: string) => {
 need("DATABASE_URL", (v) => v.startsWith("postgres") && v.includes("6543") && v.includes("pgbouncer=true"),
   "Use Supabase's pooled connection (port 6543) ending with ?pgbouncer=true&connection_limit=1");
 need("DIRECT_URL", (v) => v.startsWith("postgres") && v.includes("5432"), "Use Supabase's direct/session connection (port 5432).");
-need("APP_URL", (v) => /^https:\/\/[^/]+$/.test(v), 'Your live address with https and no trailing slash, e.g. "https://luther-paddlepoint.vercel.app".');
+need("APP_URL", (v) => /^https:\/\/[^/]+$/.test(v), 'Your live address with https and no trailing slash, e.g. "https://luther-paddlepoint.onrender.com".');
 need("SESSION_SECRET", (v) => v.length >= 32, "At least 32 random characters.");
 need("CRON_SECRET", (v) => v.length >= 16, "At least 16 random characters.");
 need("SUPABASE_URL", (v) => /^https:\/\/.+\.supabase\.co$/.test(v), "Like https://abcd.supabase.co");

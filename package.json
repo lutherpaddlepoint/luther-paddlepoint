@@ -59,5 +59,8 @@
     "@prisma/engines@5.22.0": true,
     "esbuild@0.23.1": true,
     "prisma@5.22.0": true
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

@@ -1,0 +1,43 @@
+# Render Blueprint: Dashboard → New → Blueprint → pick this GitHub repo.
+# Values marked sync: false are typed in once on Render (copy them from .env.production).
+services:
+  - type: web
+    name: luther-paddlepoint
+    runtime: node
+    region: singapore
+    plan: starter
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: RUN_SCHEDULED_JOBS
+        value: "1"
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
+        sync: false
+      - key: APP_URL
+        sync: false
+      - key: SESSION_SECRET
+        sync: false
+      - key: CRON_SECRET
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: PROOF_BUCKET
+        value: payment-proofs
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: "465"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: EMAIL_FROM
+        sync: false

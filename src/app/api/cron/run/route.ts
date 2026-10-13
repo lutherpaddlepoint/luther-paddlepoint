@@ -4,8 +4,8 @@ import { cronAuthorized, runScheduledJobs } from "@/lib/jobs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-// Called every 10 minutes by cron-job.org (and once a day by Vercel Cron as a backup),
-// with the header  Authorization: Bearer <CRON_SECRET>
+// On Render the jobs run inside the app (src/instrumentation.ts). This endpoint stays as a
+// manual/backup trigger, e.g. from cron-job.org, with the header  Authorization: Bearer <CRON_SECRET>
 async function handle(req: Request) {
   if (!cronAuthorized(req.headers.get("authorization"))) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
