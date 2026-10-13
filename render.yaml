@@ -5,7 +5,7 @@ services:
     name: luther-paddlepoint
     runtime: node
     region: singapore
-    plan: starter
+    plan: free # temporary: switch to "starter" once a card works (free instances sleep after 15 min idle)
     buildCommand: npm ci && npm run build
     startCommand: npm start
     healthCheckPath: /api/health
