@@ -49,7 +49,7 @@ export async function startCourtTimer(bookingId: string, user: SessionUser, now 
   const end = utcToManila(b.endAt);
   const t: CourtTimer = {
     bookingId: b.id,
-    label: `${b.customerName.split(" ")[0]} · until ${formatMinute(end.minuteOfDay === 0 ? 1440 : end.minuteOfDay)}`,
+    label: `${(b.customerName ?? "Court").split(" ")[0]} · until ${formatMinute(end.minuteOfDay === 0 ? 1440 : end.minuteOfDay)}`,
     endsAt: b.endAt.toISOString(),
     startedAt: now.toISOString(),
   };
