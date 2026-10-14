@@ -93,7 +93,7 @@ export default async function SettingsPage() {
                 {label}
               </label>
             ))}
-            <p className="mt-1 text-xs text-muted">Each SMS costs about ₱0.50 with Semaphore. Confirmations and reminders include a link to the QR code, so they use 2 SMS (about ₱1).</p>
+            <p className="mt-1 text-xs text-muted">Each SMS costs about ₱0.50 with Semaphore (one SMS per message). Texts have no links because Smart blocks them; the QR code goes by email.</p>
           </fieldset>
         </ActionForm>
 
