@@ -5,7 +5,13 @@ import { usePathname } from "next/navigation";
 
 type Item = { href: string; label: string; badge?: number; ownerOnly?: boolean };
 
-export default function AdminNav({ isOwner, pending, attention }: { isOwner: boolean; pending: number; attention: number }) {
+/**
+ * Dashboard menu. `vertical` = the left sidebar on computers (one item per line);
+ * otherwise a row of tabs that scrolls sideways (phones).
+ */
+export default function AdminNav({
+  isOwner, pending, attention, vertical = false,
+}: { isOwner: boolean; pending: number; attention: number; vertical?: boolean }) {
   const path = usePathname();
   const items: Item[] = [
     { href: "/admin", label: "Today" },
@@ -20,19 +26,25 @@ export default function AdminNav({ isOwner, pending, attention }: { isOwner: boo
     { href: "/admin/settings", label: "Settings", ownerOnly: true },
   ];
   return (
-    <nav className="no-scrollbar -mx-4 flex gap-1 overflow-x-auto px-4" aria-label="Dashboard">
+    <nav
+      className={vertical ? "flex flex-col gap-1" : "no-scrollbar -mx-4 flex gap-1 overflow-x-auto px-4"}
+      aria-label={vertical ? "Dashboard menu" : "Dashboard"}
+    >
       {items
         .filter((i) => isOwner || !i.ownerOnly)
         .map((i) => {
           const active = i.href === "/admin" ? path === "/admin" : path.startsWith(i.href);
+          const look = active ? "bg-white text-brand shadow-sm" : "text-white/90 hover:bg-white/10";
           return (
             <Link
               key={i.href}
               href={i.href}
               aria-current={active ? "page" : undefined}
-              className={`flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-bold ${
-                active ? "bg-white text-brand" : "text-white/85 hover:bg-white/10"
-              }`}
+              className={
+                vertical
+                  ? `flex items-center justify-between gap-2 rounded-xl px-4 py-3 text-base font-bold uppercase tracking-wide ${look}`
+                  : `flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-bold ${look}`
+              }
             >
               {i.label}
               {!!i.badge && (
