@@ -27,7 +27,7 @@ export default function AdminNav({
   ];
   return (
     <nav
-      className={vertical ? "flex flex-col gap-1" : "no-scrollbar -mx-4 flex gap-1 overflow-x-auto px-4"}
+      className={vertical ? "flex flex-col gap-0.5" : "no-scrollbar -mx-4 flex gap-1 overflow-x-auto px-4"}
       aria-label={vertical ? "Dashboard menu" : "Dashboard"}
     >
       {items
@@ -42,7 +42,7 @@ export default function AdminNav({
               aria-current={active ? "page" : undefined}
               className={
                 vertical
-                  ? `flex items-center justify-between gap-2 rounded-xl px-4 py-3 text-base font-bold uppercase tracking-wide ${look}`
+                  ? `flex items-center justify-between gap-2 rounded-xl px-4 py-2 text-[15px] font-bold uppercase tracking-wide ${look}`
                   : `flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-bold ${look}`
               }
             >
