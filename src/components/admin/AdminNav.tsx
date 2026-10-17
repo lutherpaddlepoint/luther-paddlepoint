@@ -42,7 +42,7 @@ export default function AdminNav({
               aria-current={active ? "page" : undefined}
               className={
                 vertical
-                  ? `flex items-center justify-between gap-2 rounded-xl px-4 py-2 text-[15px] font-bold uppercase tracking-wide ${look}`
+                  ? `flex items-center justify-between gap-2 rounded-xl px-4 py-1.5 text-[15px] font-bold uppercase leading-6 tracking-wide ${look}`
                   : `flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-bold ${look}`
               }
             >
