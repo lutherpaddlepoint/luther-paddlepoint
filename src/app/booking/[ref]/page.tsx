@@ -13,6 +13,12 @@ import { getSettings } from "@/lib/settings";
 import { tokenMatches, SLOT_TAKEN_NOTE } from "@/lib/payments";
 import { qrSvg } from "@/lib/qr";
 
+// Exact map pin (same as the home page).
+const PIN = "6.625928,124.062926";
+const GOOGLE_MAPS = `https://www.google.com/maps/dir/?api=1&destination=${PIN}`;
+const WAZE = `https://waze.com/ul?ll=${PIN}&navigate=yes`;
+const MAP_EMBED = `https://maps.google.com/maps?q=${PIN}&z=17&output=embed`;
+
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Your booking", robots: { index: false, follow: false } };
 
@@ -168,6 +174,22 @@ export default async function BookingPage({
           Booked by {b.customerName}, {b.mobile ? formatPhMobile(b.mobile) : ""}
         </p>
       </section>
+
+      {(b.status === "CONFIRMED" || b.status === "PENDING_VERIFICATION") && (
+        <section className="mt-6 rounded-2xl border border-line bg-white p-5">
+          <h2 className="font-display text-xl font-semibold">How to get here</h2>
+          <p className="mt-1 text-sm text-muted">{settings.facility.address}</p>
+          <iframe src={MAP_EMBED} title="Map to Luther PaddlePoint & Pool" loading="lazy" className="mt-4 h-64 w-full rounded-xl border-0 bg-paper" />
+          <div className="mt-4 flex flex-wrap gap-2">
+            <a href={GOOGLE_MAPS} target="_blank" rel="noopener noreferrer" className="rounded-xl bg-court px-4 py-2.5 text-sm font-bold text-white">
+              📍 Google Maps
+            </a>
+            <a href={WAZE} target="_blank" rel="noopener noreferrer" className="rounded-xl bg-[#33CCFF] px-4 py-2.5 text-sm font-bold text-ink">
+              🚗 Waze
+            </a>
+          </div>
+        </section>
+      )}
 
       <p className="mt-6 text-sm text-muted">
         Keep this page’s link private. It’s your proof of booking and lets you check its status.
