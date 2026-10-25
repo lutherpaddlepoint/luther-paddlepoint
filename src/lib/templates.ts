@@ -1,6 +1,10 @@
 // Message wording for emails and SMS. Pure functions (no sending), so they're easy to test and edit.
 import { shortCourtName } from "./courts-core";
 
+// Directions to the facility (same map pin as the website).
+const GOOGLE_MAPS = "https://www.google.com/maps/dir/?api=1&destination=6.625928,124.062926";
+const WAZE = "https://waze.com/ul?ll=6.625928,124.062926&navigate=yes";
+
 export type MessageEvent =
   | "PROOF_RECEIVED" | "BOOKING_CONFIRMED" | "PAYMENT_REJECTED" | "REMINDER" | "CANCELLED" | "RESCHEDULED"
   | "STAFF_PROOF_RECEIVED" | "STAFF_NEEDS_ATTENTION";
@@ -48,7 +52,7 @@ function layout(v: MessageView, title: string, bodyHtml: string) {
 <h1 style="margin:0 0 12px;font-size:22px;line-height:1.25">${esc(title)}</h1>
 ${bodyHtml}
 </td></tr>
-<tr><td style="padding:16px 24px;border-top:1px solid #D2DEDB;font-size:12px;color:#55676D">${esc(v.address)}<br>Questions: ${esc(v.contact)}</td></tr>
+<tr><td style="padding:16px 24px;border-top:1px solid #D2DEDB;font-size:12px;color:#55676D">${esc(v.address)}<br>Directions: <a href="${esc(GOOGLE_MAPS)}" style="color:#1D5A45;font-weight:bold">Google Maps</a> · <a href="${esc(WAZE)}" style="color:#1D5A45;font-weight:bold">Waze</a><br>Questions: ${esc(v.contact)}</td></tr>
 </table></td></tr></table></body></html>`;
 }
 
@@ -74,7 +78,7 @@ const detailsText = (v: MessageView, withMoney = true) =>
   [`Reference: ${v.ref}`, `Booking: ${v.amenityName}`, `Date: ${v.dateLabel}`, `Time: ${v.timeLabel}`, `Guests: ${v.guestsLabel}`,
     ...(withMoney ? [`Total: ${v.totalLabel}`, `Paid: ${v.paidLabel}`, `Balance, pay on-site: ${v.balanceLabel}`] : [])].join("\n");
 
-const footerText = (v: MessageView) => `\n\n${v.facilityName}\n${v.address}\nQuestions: ${v.contact}`;
+const footerText = (v: MessageView) => `\n\n${v.facilityName}\n${v.address}\nDirections: ${GOOGLE_MAPS}\nQuestions: ${v.contact}`;
 
 export type Email = { subject: string; text: string; html: string };
 
